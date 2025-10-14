@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique @db.VarChar(191)
+  username  String?  @unique @db.VarChar(100)
+  password  String?
+  firstName String?
+  lastName  String?
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees   Employee[]
+  salaries    Salary[]
+  checkClocks CheckClock[]
+  accounts    OAuthAccount[]
+}
+
+model Employee {
+  id        Int       @id @default(autoincrement())
+  userId    Int?
+  idCard    String?   @db.VarChar(100)
+  firstName String    @db.VarChar(100)
+  lastName  String?   @db.VarChar(100)
+  gender    String?   @db.VarChar(10)
+  birthDate DateTime?
+  address   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user        User?                @relation(fields: [userId], references: [id])
+  credentials EmployeeCredential[]
+}
+
+model EmployeeCredential {
+  id          Int     @id @default(autoincrement())
+  employeeId  Int
+  companyUser String  @db.VarChar(100)
+  empCode     String  @db.VarChar(100)
+  password    String
+  isActive    Boolean @default(true)
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([companyUser, empCode], name: "companyUser_empCode")
+}
+
+model OAuthAccount {
+  id                Int     @id @default(autoincrement())
+  userId            Int
+  provider          String  @db.VarChar(50)
+  providerAccountId String  @db.VarChar(191)
+  email             String? @db.VarChar(191)
+
+  accessToken  String? @db.Text
+  refreshToken String? @db.Text
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId], name: "provider_providerAccountId")
+}
+
+model Salary {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  type        String    @db.VarChar(50)
+  amount      Decimal   @db.Decimal(12, 2)
+  note        String?   @db.Text
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model CheckClockSetting {
+  id        Int       @id @default(autoincrement())
+  name      String
+  type      String    @db.VarChar(50) // "shift" | "flexi"
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  times CheckClockSettingTime[]
+}
+
+model CheckClockSettingTime {
+  id                  Int       @id @default(autoincrement())
+  checkClockSettingId Int
+  day                 Int
+  clockIn             DateTime?
+  breakStart          DateTime?
+  breakEnd            DateTime?
+  clockOut            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  setting CheckClockSetting @relation(fields: [checkClockSettingId], references: [id])
+}
+
+model CheckClock {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  checkType String    @db.VarChar(30) // in | out | break_start | break_end
+  time      DateTime  @default(now())
+  note      String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model LetterFormat {
+  id        Int       @id @default(autoincrement())
+  name      String
+  content   String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  letters Letter[]
+}
+
+model Letter {
+  id             Int       @id @default(autoincrement())
+  letterFormatId Int
+  name           String
+  status         String    @default("draft")
+  payload        Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  format LetterFormat @relation(fields: [letterFormatId], references: [id])
+}
