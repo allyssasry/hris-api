@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `admincheckclock` ADD COLUMN `approval` ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    ADD COLUMN `approvedAt` DATETIME(3) NULL,
+    ADD COLUMN `approvedBy` INTEGER NULL,
+    ADD COLUMN `status` VARCHAR(191) NULL;

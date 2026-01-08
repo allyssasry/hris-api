@@ -7,39 +7,165 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/**
+ * ================= ENUMS =================
+ */
+
+enum CheckType {
+  IN
+  OUT
+}
+
+enum AttendanceType {
+  WFO
+  WFH
+  VISIT
+  ONSITE
+}
+
+enum VerifyStatus {
+  PENDING
+  VALID
+  INVALID
+}
+
+enum LeaveType {
+  ABSENT
+  ANNUAL_LEAVE
+  SICK_LEAVE
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AdminAttendanceType {
+  CLOCK_IN
+  CLOCK_OUT
+  ABSENT
+  ANNUAL_LEAVE
+  SICK_LEAVE
+}
+
+enum AdminAttendanceStatus {
+  ON_TIME
+  LATE
+}
+
+enum ContractType {
+  permanent
+  contract
+  intern
+  resign
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/**
+ * ================= USER =================
+ */
+
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique @db.VarChar(191)
-  username  String?  @unique @db.VarChar(100)
-  password  String?
+  id       Int     @id @default(autoincrement())
+  email    String? @unique
+  username String? @unique
+  password String
+
   firstName String?
   lastName  String?
-  isAdmin   Boolean  @default(false)
+
+  role String @default("user") // user | admin
+
+  // ===== RELASI COMPANY (ANGGOTA) =====
+  companyId Int?
+  company   Company? @relation("CompanyUsers", fields: [companyId], references: [id])
+
+  // ===== RELASI COMPANY (OWNER) =====
+  ownedCompanies Company[] @relation("CompanyOwner")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  employees   Employee[]
-  salaries    Salary[]
-  checkClocks CheckClock[]
-  accounts    OAuthAccount[]
+  employees       Employee[]
+  salaries        Salary[]
+  accounts        OAuthAccount[]
+  assignments     CheckAssignment[] @relation("AssignmentOwner")
+  approvedLetters Letter[]          @relation("LetterApprover")
+  letters         Letter[]          @relation("LetterOwner")
+  userShifts      UserShift[]
+  leaves          Leave[]
+
+  resetPasswordToken String?
+  resetPasswordExp   DateTime?
 }
+
+model Company {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  // ===== OWNER COMPANY =====
+  ownerId Int
+  owner   User @relation("CompanyOwner", fields: [ownerId], references: [id])
+
+  // ===== SEMUA USER DALAM COMPANY =====
+  users User[] @relation("CompanyUsers")
+
+  // ===== EMPLOYEE =====
+  employees Employee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * ================= EMPLOYEE =================
+ */
 
 model Employee {
-  id        Int       @id @default(autoincrement())
-  userId    Int?
-  idCard    String?   @db.VarChar(100)
-  firstName String    @db.VarChar(100)
-  lastName  String?   @db.VarChar(100)
-  gender    String?   @db.VarChar(10)
-  birthDate DateTime?
-  address   String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id            Int       @id @default(autoincrement())
+  employeeId String @unique
+  firstName     String
+  lastName      String?
+  phone         String?   @db.VarChar(50)
+  nik           String?   @db.VarChar(50)
+  gender        String?   @db.VarChar(10)
+  birthDate     DateTime?
+  jobdesk       String?   @db.VarChar(100)
+  branch        String?   @db.VarChar(100)
+  contractType  String?   @db.VarChar(50)
+  grade         String?   @db.VarChar(50)
+  bank          String?   @db.VarChar(50)
+  accountName   String?   @db.VarChar(100)
+  accountNumber String?   @db.VarChar(100)
+  spType        String?   @db.VarChar(20)
+  education     String? // ⭐ Pendidikan terakhir
+  avatar        String?
 
-  user        User?                @relation(fields: [userId], references: [id])
-  credentials EmployeeCredential[]
+  // ===== RELASI COMPANY =====
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id])
+
+  // ===== RELASI USER =====
+  userId Int?
+  User   User? @relation(fields: [userId], references: [id])
+
+  // ===== RELASI LAIN =====
+  EmployeeCredential EmployeeCredential[]
+  checkClocks        CheckClock[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
+
+/**
+ * ================= EMPLOYEE CREDENTIAL =================
+ */
 
 model EmployeeCredential {
   id          Int     @id @default(autoincrement())
@@ -49,10 +175,14 @@ model EmployeeCredential {
   password    String
   isActive    Boolean @default(true)
 
-  employee Employee @relation(fields: [employeeId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([companyUser, empCode], name: "companyUser_empCode")
 }
+
+/**
+ * ================= OAUTH =================
+ */
 
 model OAuthAccount {
   id                Int     @id @default(autoincrement())
@@ -60,14 +190,17 @@ model OAuthAccount {
   provider          String  @db.VarChar(50)
   providerAccountId String  @db.VarChar(191)
   email             String? @db.VarChar(191)
+  accessToken       String? @db.Text
+  refreshToken      String? @db.Text
 
-  accessToken  String? @db.Text
-  refreshToken String? @db.Text
-
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId], name: "provider_providerAccountId")
 }
+
+/**
+ * ================= SALARY =================
+ */
 
 model Salary {
   id          Int       @id @default(autoincrement())
@@ -81,48 +214,141 @@ model Salary {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+/**
+ * ================= CHECK CLOCK SETTINGS =================
+ */
 
 model CheckClockSetting {
   id        Int       @id @default(autoincrement())
   name      String
-  type      String    @db.VarChar(50) // "shift" | "flexi"
+  type      String    @db.VarChar(50)
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  times CheckClockSettingTime[]
+  times      CheckClockSettingTime[]
+  userShifts UserShift[]
 }
 
 model CheckClockSettingTime {
   id                  Int       @id @default(autoincrement())
   checkClockSettingId Int
   day                 Int
-  clockIn             DateTime?
-  breakStart          DateTime?
-  breakEnd            DateTime?
-  clockOut            DateTime?
+  clockInMinutes      Int?
+  breakStartMinutes   Int?
+  breakEndMinutes     Int?
+  clockOutMinutes     Int?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
 
-  setting CheckClockSetting @relation(fields: [checkClockSettingId], references: [id])
+  setting CheckClockSetting @relation(fields: [checkClockSettingId], references: [id], onDelete: Cascade)
+
+  @@index([checkClockSettingId, day])
 }
 
 model CheckClock {
-  id        Int       @id @default(autoincrement())
-  userId    Int
-  checkType String    @db.VarChar(30) // in | out | break_start | break_end
-  time      DateTime  @default(now())
-  note      String?   @db.Text
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id           Int       @id @default(autoincrement())
+  employeeId   Int
+  type         String
+  clockOutTime DateTime? // ⬅️ WAJIB
+  time         DateTime?   // ✅ UBAH INI
 
-  user User @relation(fields: [userId], references: [id])
+  status     String? // ON_TIME / LATE (SUDAH ADA)
+  approval   ApprovalStatus @default(PENDING) // ⬅️ TAMBAHAN
+  approvedBy Int? // admin user id
+  approvedAt DateTime?
+
+  locationName String
+  address      String?
+  latitude     Float?
+  longitude    Float?
+  notes        String?
+  proofPath    String?
+  proofName    String?
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  createdAt DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("checkclock")
 }
+
+/**
+ * ================= USER SHIFT =================
+ */
+
+model UserShift {
+  id                  Int       @id @default(autoincrement())
+  userId              Int
+  checkClockSettingId Int
+  effectiveFrom       DateTime
+  effectiveTo         DateTime?
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  setting CheckClockSetting @relation(fields: [checkClockSettingId], references: [id], onDelete: Cascade)
+
+  @@index([userId, effectiveFrom])
+}
+
+/**
+ * ================= CHECK CLOCK =================
+ */
+
+model CheckAssignment {
+  id             Int            @id @default(autoincrement())
+  userId         Int
+  attendanceType AttendanceType
+  latitude       Decimal?       @db.Decimal(10, 7)
+  longitude      Decimal?       @db.Decimal(10, 7)
+  address        String?
+  locationName   String?
+  geoRadius      Int?
+  startAt        DateTime?
+  endAt          DateTime?
+  note           String?        @db.Text
+  createdBy      Int?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  owner User @relation("AssignmentOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt, endAt])
+}
+
+/**
+ * ================= LEAVE =================
+ */
+
+model Leave {
+  id         Int         @id @default(autoincrement())
+  userId     Int
+  type       LeaveType
+  note       String?     @db.Text
+  startDate  DateTime
+  endDate    DateTime
+  attachment String?     @db.VarChar(191)
+  status     LeaveStatus @default(PENDING)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  deletedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate, endDate])
+}
+
+/**
+ * ================= LETTER =================
+ */
 
 model LetterFormat {
   id        Int       @id @default(autoincrement())
@@ -138,12 +364,20 @@ model LetterFormat {
 model Letter {
   id             Int       @id @default(autoincrement())
   letterFormatId Int
+  userId         Int
   name           String
+  number         String?   @unique
   status         String    @default("draft")
   payload        Json?
+  fileUrl        String?   @db.VarChar(191)
+  approverId     Int?
+  approvedAt     DateTime?
+  rejectedReason String?   @db.Text
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  format LetterFormat @relation(fields: [letterFormatId], references: [id])
+  format   LetterFormat @relation(fields: [letterFormatId], references: [id], onDelete: Restrict)
+  owner    User         @relation("LetterOwner", fields: [userId], references: [id], onDelete: Cascade)
+  approver User?        @relation("LetterApprover", fields: [approverId], references: [id], onDelete: SetNull)
 }

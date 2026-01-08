@@ -1,123 +1,136 @@
-import { OAuth2Client } from 'google-auth-library';
-import jwt from 'jsonwebtoken';
-import { prisma } from '../utils/prisma.js';
-import { googleTokenSchema } from '../validators/authSchemas.js';
+// src/controllers/googleAuthController.js
+import { OAuth2Client } from "google-auth-library";
+import jwt from "jsonwebtoken";
+import { prisma } from "../utils/prisma.js";
+import { googleTokenSchema } from "../validators/authSchemas.js";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// ===== Fungsi untuk membuat JWT =====
+/* ===================== JWT HELPER ===================== */
 function issueJWT(user) {
   return jwt.sign(
     {
       id: user.id,
       email: user.email,
       username: user.username,
-      isAdmin: user.isAdmin,
+      role: user.role,   // ✔ gunakan role
     },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: "7d" }
   );
 }
 
-// ===== Controller utama =====
+/* ===================== GOOGLE SIGN IN ===================== */
 export const googleSignIn = async (req, res) => {
-  // Validasi body request (pakai Zod)
-  const parse = googleTokenSchema.safeParse(req.body);
-  if (!parse.success)
-    return res.status(400).json({ errors: parse.error.flatten() });
-
-  const { id_token } = parse.data;
-
-  // ===== Verifikasi token Google =====
-  let ticket;
   try {
-    ticket = await client.verifyIdToken({
-      idToken: id_token,
+    // Validasi token google
+    const parsed = googleTokenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(422).json({
+        message: "Validation error",
+        errors: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    const idToken = parsed.data.idToken || parsed.data.credential;
+
+    // Verifikasi token Google
+    const ticket = await client.verifyIdToken({
+      idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-  } catch {
-    return res.status(401).json({ message: 'Token Google tidak valid' });
-  }
 
-  // ===== Ambil data payload dari token =====
-  const payload = ticket.getPayload(); // berisi sub, email, email_verified, name, given_name, family_name
-  const sub = payload.sub;
-  const email = payload.email?.toLowerCase();
-
-  // ✅ Tambahkan validasi email verified
-  if (payload.email && payload.email_verified === false) {
-    return res
-      .status(400)
-      .json({ message: 'Email Google belum terverifikasi' });
-  }
-
-  try {
-    // ===== Cek apakah akun Google ini sudah pernah login =====
-    let account = await prisma.oAuthAccount.findUnique({
-      where: {
-        provider_providerAccountId: {
-          provider: 'google',
-          providerAccountId: sub,
-        },
-      },
-      include: { user: true },
-    });
-
-    // Kalau sudah ada → langsung login
-    if (account) {
-      const token = issueJWT(account.user);
-      return res.json({
-        token,
-        user: {
-          id: account.user.id,
-          email: account.user.email,
-          firstName: account.user.firstName,
-          lastName: account.user.lastName,
-        },
-      });
+    const payload = ticket.getPayload();
+    if (!payload?.email) {
+      return res.status(401).json({ message: "Google tidak menyediakan email" });
     }
 
-    // ===== Kalau belum ada → cek user berdasarkan email =====
-    let user = email
-      ? await prisma.user.findUnique({ where: { email } })
-      : null;
+    const email = payload.email.toLowerCase();
 
-    // Kalau belum ada user sama sekali → buat user baru
+    let user = await prisma.user.findUnique({
+      where: { email },
+      include: { accounts: true },
+    });
+
+    /* =======================================================
+       1️⃣  USER BARU → langsung jadi ADMIN
+       ======================================================= */
     if (!user) {
+      const firstName =
+        payload.given_name || payload.name?.split(" ")[0] || null;
+      const lastName = payload.family_name || null;
+
       user = await prisma.user.create({
         data: {
-          email: email || `google_${sub}@noemail.local`,
-          firstName: payload.given_name || payload.name || 'User',
-          lastName: payload.family_name || null,
+          email,
+          firstName,
+          lastName,
+          username: email.split("@")[0],
+          role: "admin", // ⭐ google signup = admin
+        },
+      });
+
+      await prisma.oAuthAccount.create({
+        data: {
+          userId: user.id,
+          provider: "google",
+          providerAccountId: payload.sub,
+          email,
         },
       });
     }
 
-    // ===== Buat relasi OAuthAccount untuk user ini =====
-    await prisma.oAuthAccount.create({
-      data: {
-        userId: user.id,
-        provider: 'google',
-        providerAccountId: sub,
-        email,
-      },
-    });
+    /* =======================================================
+       2️⃣  USER LAMA → jadikan admin kalau belum admin
+       ======================================================= */
+    else {
+      // pastikan akun google tercatat
+      const hasGoogle = user.accounts.some(
+        (acc) =>
+          acc.provider === "google" &&
+          acc.providerAccountId === payload.sub
+      );
 
-    // ===== Terbitkan JWT & kirim respon =====
+      if (!hasGoogle) {
+        await prisma.oAuthAccount.create({
+          data: {
+            userId: user.id,
+            provider: "google",
+            providerAccountId: payload.sub,
+            email,
+          },
+        });
+      }
+
+      // ⭐ pastikan admin
+      if (user.role !== "admin") {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { role: "admin" },
+        });
+      }
+    }
+
+    /* =======================================================
+       3️⃣  ISSUE JWT
+       ======================================================= */
     const token = issueJWT(user);
-    res.json({
+
+    return res.json({
+      ok: true,
+      message: "Google Sign In Success",
       token,
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
+        role: user.role, // ✔ hasil = admin
       },
     });
   } catch (err) {
-    console.error('Google sign-in error:', err);
-    res
-      .status(500)
-      .json({ message: 'Terjadi kesalahan saat login dengan Google' });
+    console.error("GOOGLE SIGN-IN ERROR:", err);
+    return res.status(500).json({ message: "Google Auth Error" });
   }
 };
