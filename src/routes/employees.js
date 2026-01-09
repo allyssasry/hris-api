@@ -8,6 +8,7 @@ import {
   getEmployeeById,
   deleteEmployee,
   updateAvatar,
+  getMyEmployee
   
 } from "../controllers/employeeController.js";
 
@@ -21,6 +22,14 @@ const r = Router();
 
 // ✅ STATS — HARUS PALING ATAS
 r.get("/stats", auth(true), getEmployeeStats);
+r.get("/me",
+  (req, res, next) => {
+    console.log("🔥 HIT /employees/me");
+    next();
+  },
+  auth(),
+  getMyEmployee
+);
 
 // LIST
 r.get("/", auth(true), getEmployees);

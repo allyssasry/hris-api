@@ -188,10 +188,17 @@ export async function employeeSignIn(req, res) {
         id: employee.User.id,
         role: "employee",
         companyId: company.id,
+        employeeId: employee.id, // ⭐ TAMBAHKAN INI
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
+    res.cookie("token", token, {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: false,
+  maxAge: 24 * 60 * 60 * 1000,
+});
   // 🔥 LOG EMPLOYEE LOGIN
     console.log("\n=============== EMPLOYEE LOGIN ===============");
     console.log({
@@ -208,7 +215,7 @@ export async function employeeSignIn(req, res) {
       token,
       user: {
         id: employee.User.id,
-        employeeId: employee.employeeId,
+        employeeId: employee.id,
         name: `${employee.firstName} ${employee.lastName || ""}`.trim(),
         role: "employee",
         companyId: company.id,

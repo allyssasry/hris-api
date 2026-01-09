@@ -521,3 +521,51 @@ export async function getEmployeeStats(req, res) {
     });
   }
 }
+
+/**
+ * GET /api/employees/me
+ * Ambil profile employee yang sedang login
+ */
+export async function getMyEmployee(req, res) {
+  try {
+      console.log("USER:", req.user); // 🔥 DEBUG
+
+    const { employeeId } = req.user;
+
+    if (!employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: "Employee only",
+      });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        jobdesk: true,
+        avatar: true,
+      },
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: employee,
+    });
+  } catch (err) {
+    console.error("getMyEmployee error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+    });
+  }
+}

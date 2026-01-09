@@ -44,10 +44,7 @@ app.use((req, res, next) => {
 // STATIC UPLOADS
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/uploads/avatars', express.static(path.join(process.cwd(), 'uploads/avatars')));
-app.use(
-  "/uploads",
-  express.static(path.join(process.cwd(), "uploads"))
-);
+
 // CORS
 const allowedOrigins = [
   "http://localhost:5173",
