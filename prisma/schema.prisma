@@ -171,7 +171,7 @@ model CompanyLocation {
 
 model Employee {
   id            Int       @id @default(autoincrement())
-  employeeId String @unique
+  employeeId String // Unique per company, not globally
   firstName     String
   lastName      String?
   phone         String?   @db.VarChar(50)
@@ -208,6 +208,9 @@ model Employee {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // ===== COMPOSITE UNIQUE (employeeId per company) =====
+  @@unique([employeeId, companyId], name: "Employee_employeeId_companyId")
 }
 
 /**

@@ -88,14 +88,15 @@ export async function getAdminDashboardStats(req, res) {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
     const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-    // Get attendance records for selected month
+    // Get attendance records for selected month - FILTERED BY COMPANY
     const attendanceRecords = await prisma.checkClock.findMany({
       where: {
         OR: [
           { time: { gte: startDate, lte: endDate } },
           { startDate: { gte: startDate, lte: endDate } },
         ],
-        type: "CLOCK_IN"
+        type: "CLOCK_IN",
+        employee: companyId ? { companyId } : undefined  // 🔑 Filter by company
       },
       include: {
         employee: {
@@ -120,14 +121,15 @@ export async function getAdminDashboardStats(req, res) {
       }
     });
 
-    // Count absents
+    // Count absents - FILTERED BY COMPANY
     const absentRecords = await prisma.checkClock.count({
       where: {
         OR: [
           { time: { gte: startDate, lte: endDate } },
           { startDate: { gte: startDate, lte: endDate } },
         ],
-        type: "ABSENT"
+        type: "ABSENT",
+        employee: companyId ? { companyId } : undefined  // 🔑 Filter by company
       }
     });
     absentCount = absentRecords;
@@ -139,7 +141,8 @@ export async function getAdminDashboardStats(req, res) {
           { time: { gte: todayStart, lte: todayEnd } },
           { startDate: { gte: todayStart, lte: todayEnd } },
         ],
-        type: "CLOCK_IN"
+        type: "CLOCK_IN",
+        employee: companyId ? { companyId } : undefined  // 🔑 Filter by company
       },
       include: {
         employee: {

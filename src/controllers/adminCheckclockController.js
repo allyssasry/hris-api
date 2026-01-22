@@ -86,9 +86,21 @@ export async function listAdminCheckclocks(req, res, next) {
       return res.status(403).json({ message: "Admin only" });
     }
 
-  await autoClockOutAt2130();
+    const { companyId } = req.user; // 🔑 Get companyId from JWT
+    
+    if (!companyId) {
+      return res.status(403).json({ message: "Company belum diset untuk user ini" });
+    }
 
+    await autoClockOutAt2130();
+
+    // ✅ FILTER BY COMPANY - Only show checkclocks from employees in this company
     const clocks = await prisma.checkClock.findMany({
+      where: {
+        employee: {
+          companyId: companyId  // 🔑 Filter by company
+        }
+      },
       include: { employee: true },
       orderBy: { time: "desc" },
     });

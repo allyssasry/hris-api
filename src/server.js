@@ -6,7 +6,11 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from "dotenv";
+import passport from "passport";
 dotenv.config();
+
+// Initialize Passport Google OAuth Strategy
+import "./config/passport.js";
 
 import authRoutes from './routes/auth.js';
 import employeeRoutes from './routes/employees.js';
@@ -22,6 +26,7 @@ import companyRoutes from "./routes/companyRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import scheduleRoutes from "./routes/scheduleRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import googleAuthRoutes from "./routes/googleAuthRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,12 +78,16 @@ app.use(
   })
 );
 
+// PASSPORT INITIALIZATION
+app.use(passport.initialize());
+
 // HEALTH CHECK
 app.get("/", (_req, res) => res.json({ status: "ok", service: "HRIS API" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // API ROUTES
 app.use("/api/auth", authRoutes);
+app.use("/api/auth", googleAuthRoutes); // Google OAuth routes
 app.use("/api/password", passwordRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/employees", employeeRoutes);

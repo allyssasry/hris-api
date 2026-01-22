@@ -217,15 +217,21 @@ export async function createEmployee(req, res) {
     }
 
     // ===================== CEK DUPLIKASI =====================
+    // Employee ID harus unique PER COMPANY (bukan global)
     const [existingEmployee, existingEmail] = await Promise.all([
-      prisma.employee.findUnique({ where: { employeeId } }),
+      prisma.employee.findFirst({ 
+        where: { 
+          employeeId,
+          companyId  // ✅ Filter by company - Employee ID bisa sama di company berbeda
+        } 
+      }),
       email ? prisma.user.findUnique({ where: { email } }) : null,
     ]);
 
     if (existingEmployee) {
       return res.status(409).json({
         success: false,
-        message: "Employee ID sudah digunakan",
+        message: "Employee ID sudah digunakan di company ini",
       });
     }
 
