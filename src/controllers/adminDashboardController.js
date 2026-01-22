@@ -23,12 +23,20 @@ export async function getAdminDashboardStats(req, res) {
     }
 
     // ===================== EMPLOYEE STATS =====================
+    // Get companyId from user
+    const { companyId } = req.user;
+
+    const companyFilter = companyId ? { companyId } : {};
+
     // Total employees
-    const totalEmployees = await prisma.employee.count();
+    const totalEmployees = await prisma.employee.count({
+      where: companyFilter
+    });
     
     // New employees (created this month - using createdAt since no joinDate)
     const newEmployees = await prisma.employee.count({
       where: {
+        ...companyFilter,
         createdAt: {
           gte: startDate,
           lte: endDate
@@ -36,33 +44,42 @@ export async function getAdminDashboardStats(req, res) {
       }
     });
     
-    // Active employees (not resigned)
+    // Active employees (isActive = true AND terminationType = null)
     const activeEmployees = await prisma.employee.count({
       where: {
-        NOT: {
-          contractType: "resign"
-        }
+        ...companyFilter,
+        isActive: true,
+        terminationType: null
       }
     });
     
-    // Past/Resigned employees
+    // Past employees (terminated or resigned)
     const pastEmployees = await prisma.employee.count({
       where: {
-        contractType: "resign"
+        ...companyFilter,
+        terminationType: { not: null }
       }
     });
 
-    // ===================== EMPLOYEE STATUS STATS =====================
+    // ===================== EMPLOYEE STATUS STATS (5 tipe) =====================
     const permanentCount = await prisma.employee.count({
-      where: { contractType: "permanent" }
+      where: { ...companyFilter, contractType: "permanent", terminationType: null }
+    });
+    
+    const trialCount = await prisma.employee.count({
+      where: { ...companyFilter, contractType: "trial", terminationType: null }
     });
     
     const contractCount = await prisma.employee.count({
-      where: { contractType: "contract" }
+      where: { ...companyFilter, contractType: "contract", terminationType: null }
     });
     
     const internCount = await prisma.employee.count({
-      where: { contractType: "intern" }
+      where: { ...companyFilter, contractType: "intern", terminationType: null }
+    });
+
+    const freelanceCount = await prisma.employee.count({
+      where: { ...companyFilter, contractType: "freelance", terminationType: null }
     });
 
     // ===================== ATTENDANCE STATS =====================
@@ -150,9 +167,10 @@ export async function getAdminDashboardStats(req, res) {
         },
         employeeStatus: {
           permanent: permanentCount,
+          trial: trialCount,
           contract: contractCount,
           intern: internCount,
-          resign: pastEmployees
+          freelance: freelanceCount
         },
         attendance: {
           onTime: onTimeCount,
@@ -189,6 +207,8 @@ export async function getEmployeeChartData(req, res) {
   try {
     const { year } = req.query;
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
+    const { companyId } = req.user;
+    const companyFilter = companyId ? { companyId } : {};
 
     const monthlyData = [];
     
@@ -199,6 +219,7 @@ export async function getEmployeeChartData(req, res) {
       // New employees created in this month (using createdAt)
       const newCount = await prisma.employee.count({
         where: {
+          ...companyFilter,
           createdAt: {
             gte: startDate,
             lte: endDate
@@ -206,18 +227,21 @@ export async function getEmployeeChartData(req, res) {
         }
       });
       
-      // Active employees as of this month (created before end of month and not resigned)
+      // Active employees as of this month (created before end of month, isActive=true, not terminated)
       const activeCount = await prisma.employee.count({
         where: {
-          NOT: { contractType: "resign" },
+          ...companyFilter,
+          isActive: true,
+          terminationType: null,
           createdAt: { lte: endDate }
         }
       });
       
-      // Resigned employees count
+      // Past employees count (terminated)
       const resignCount = await prisma.employee.count({
         where: {
-          contractType: "resign"
+          ...companyFilter,
+          terminationType: { not: null }
         }
       });
 
@@ -246,38 +270,46 @@ export async function getEmployeeChartData(req, res) {
 
 /**
  * GET /dashboard/admin/status-chart
- * Get employee status distribution for chart
+ * Get employee status distribution for chart (5 tipe kontrak)
  */
 export async function getStatusChartData(req, res) {
   try {
     const { month } = req.query; // format: "2026-01"
+    const { companyId } = req.user;
+    const companyFilter = companyId ? { companyId } : {};
     
-    // Get counts by contract type
+    // Only count active employees (not terminated)
+    const activeFilter = { ...companyFilter, terminationType: null };
+    
+    // Get counts by contract type (5 tipe)
     const permanent = await prisma.employee.count({
-      where: { contractType: "permanent" }
+      where: { ...activeFilter, contractType: "permanent" }
+    });
+    
+    const trial = await prisma.employee.count({
+      where: { ...activeFilter, contractType: "trial" }
     });
     
     const contract = await prisma.employee.count({
-      where: { contractType: "contract" }
+      where: { ...activeFilter, contractType: "contract" }
     });
     
     const intern = await prisma.employee.count({
-      where: { contractType: "intern" }
+      where: { ...activeFilter, contractType: "intern" }
     });
 
-    // For "percobaan" (probation), we'll count contract employees
-    // In real scenario, you might have a separate field for this
-    const probation = await prisma.employee.count({
-      where: { contractType: "contract" }
+    const freelance = await prisma.employee.count({
+      where: { ...activeFilter, contractType: "freelance" }
     });
 
     res.json({
       success: true,
       data: [
         { name: "Permanen", value: permanent },
-        { name: "Percobaan", value: probation },
+        { name: "Percobaan", value: trial },
         { name: "PKWT (Kontrak)", value: contract },
-        { name: "Magang", value: intern }
+        { name: "Magang", value: intern },
+        { name: "Lepas", value: freelance }
       ]
     });
   } catch (err) {

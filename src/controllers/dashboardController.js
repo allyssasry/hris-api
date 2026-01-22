@@ -52,17 +52,54 @@ export async function getMyDashboard(req, res) {
       if (r.type === "ABSENT") attendance.ABSENT++;
     });
 
-    // ===================== LEAVE SUMMARY =====================
+    // ===================== LEAVE SUMMARY (YEARLY) =====================
+    // Calculate for the entire year, not just the current month
+    const yearStart = new Date(currentYear, 0, 1);
+    const yearEnd = new Date(currentYear, 11, 31, 23, 59, 59);
+    
+    // Fetch all leave records for the year that are APPROVED
+    const leaveRecords = await prisma.checkClock.findMany({
+      where: {
+        employeeId,
+        type: { in: ["ANNUAL_LEAVE", "SICK_LEAVE"] },
+        approval: "APPROVED",
+        OR: [
+          { time: { gte: yearStart, lte: yearEnd } },
+          { startDate: { gte: yearStart, lte: yearEnd } },
+        ],
+      },
+    });
+
+    // Calculate total leave days taken (considering multi-day leaves)
+    let takenDays = 0;
+    leaveRecords.forEach((leave) => {
+      if (leave.startDate && leave.endDate) {
+        // Multi-day leave: calculate days between startDate and endDate
+        const start = new Date(leave.startDate);
+        const end = new Date(leave.endDate);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both days
+        takenDays += diffDays;
+      } else {
+        // Single day leave
+        takenDays += 1;
+      }
+    });
+
     const quotaDays = 12;
-
-    const takenDays = records.filter((r) =>
-      ["ANNUAL_LEAVE", "SICK_LEAVE"].includes(r.type)
-    ).length;
-
     const leave = {
       quotaDays,
       takenDays,
-      remainingDays: quotaDays - takenDays,
+      remainingDays: Math.max(0, quotaDays - takenDays),
+      leaveHistory: leaveRecords.map((l) => ({
+        id: l.id,
+        type: l.type,
+        status: l.approval,
+        startDate: l.startDate,
+        endDate: l.endDate,
+        notes: l.notes,
+        createdAt: l.createdAt,
+      })),
     };
 
     // ===================== WORK HOURS CALCULATION =====================
@@ -89,13 +126,13 @@ export async function getMyDashboard(req, res) {
 
     // ===================== YEARLY WORK HOURS FOR CHART =====================
     const yearForChart = queryYear ? Number(queryYear) : currentYear;
-    const yearStart = new Date(yearForChart, 0, 1);
-    const yearEnd = new Date(yearForChart, 11, 31, 23, 59, 59);
+    const chartYearStart = new Date(yearForChart, 0, 1);
+    const chartYearEnd = new Date(yearForChart, 11, 31, 23, 59, 59);
 
     const yearRecords = await prisma.checkClock.findMany({
       where: {
         employeeId,
-        time: { gte: yearStart, lte: yearEnd },
+        time: { gte: chartYearStart, lte: chartYearEnd },
         type: { in: ['CLOCK_IN', 'CLOCK_OUT'] }
       },
       orderBy: { time: 'asc' }

@@ -195,10 +195,11 @@ export async function createEmployee(req, res) {
 
     const ALLOWED_EDUCATION = ["sma", "smk", "d3", "s1", "s2", "s3"];
     const ALLOWED_CONTRACT_TYPES = [
-      "permanent",
-      "contract",
-      "intern",
-      "resign",
+      "permanent",  // Permanen
+      "trial",      // Percobaan
+      "contract",   // PKWT/Kontrak
+      "intern",     // Magang
+      "freelance",  // Lepas/Freelance
     ];
 
     if (education && !ALLOWED_EDUCATION.includes(education)) {
@@ -349,10 +350,11 @@ export async function updateEmployee(req, res) {
       },
     });
 const ALLOWED_CONTRACT_TYPES = [
-  "permanent",
-  "contract",
-  "intern",   // ⭐ MAGANG
-  "resign",
+  "permanent",  // Permanen
+  "trial",      // Percobaan
+  "contract",   // PKWT/Kontrak
+  "intern",     // Magang
+  "freelance",  // Lepas/Freelance
 ];
 if (body.password) {
   const bcrypt = await import("bcryptjs");
@@ -493,8 +495,16 @@ export async function updateAvatar(req, res) {
 export async function getEmployeeStats(req, res) {
   try {
     const { month, year } = req.query;
+    const { companyId } = req.user;
 
-    const where = {};
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: "Company belum diset untuk user ini",
+      });
+    }
+
+    const where = { companyId };
 
     if (month && year) {
       where.createdAt = {
@@ -508,6 +518,8 @@ export async function getEmployeeStats(req, res) {
       select: {
         createdAt: true,
         contractType: true,
+        isActive: true,
+        terminationType: true,
       },
     });
 
@@ -515,7 +527,7 @@ export async function getEmployeeStats(req, res) {
       total: employees.length,
       new: 0,
       active: 0,
-      resigned: 0,
+      past: 0, // resigned + terminated
     };
 
     const statusDistribution = {
@@ -527,24 +539,26 @@ export async function getEmployeeStats(req, res) {
     employees.forEach((emp) => {
       const type = (emp.contractType || "").toLowerCase();
 
-      // RESIGNED
-      if (type === "resign" || type === "terminated") {
-        stats.resigned++;
+      // PAST EMPLOYEE (resigned / terminated)
+      if (emp.terminationType) {
+        stats.past++;
         return;
       }
 
-      // ACTIVE (employee bulan itu)
-      stats.active++;
+      // ACTIVE EMPLOYEE (isActive = true dan belum terminated)
+      if (emp.isActive) {
+        stats.active++;
 
-      // ✅ NEW (≤ 24 jam)
-      if (isNewEmployee(emp.createdAt)) {
-        stats.new++;
+        // ✅ NEW (≤ 24 jam)
+        if (isNewEmployee(emp.createdAt)) {
+          stats.new++;
+        }
+
+        // STATUS DISTRIBUTION
+        if (type === "permanent") statusDistribution.permanent++;
+        else if (type === "contract") statusDistribution.contract++;
+        else if (type === "intern") statusDistribution.intern++;
       }
-
-      // STATUS DISTRIBUTION
-      if (type === "permanent") statusDistribution.permanent++;
-      else if (type === "contract") statusDistribution.contract++;
-      else if (type === "intern") statusDistribution.intern++;
     });
 
     return res.json({
@@ -606,6 +620,144 @@ export async function getMyEmployee(req, res) {
     res.status(500).json({
       success: false,
       message: "Failed to fetch profile",
+    });
+  }
+}
+
+/**
+ * PATCH /api/employees/:id/toggle-status
+ * Toggle status aktif/nonaktif employee (sementara)
+ */
+export async function toggleEmployeeStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { companyId, role } = req.user;
+
+    if (role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin only",
+      });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    if (employee.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden access",
+      });
+    }
+
+    // Jika sudah terminated/resign, tidak bisa toggle
+    if (employee.terminationType) {
+      return res.status(400).json({
+        success: false,
+        message: "Employee sudah di-terminate/resign, tidak bisa toggle status",
+      });
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id: Number(id) },
+      data: { isActive: !employee.isActive },
+    });
+
+    return res.json({
+      success: true,
+      message: updated.isActive ? "Employee diaktifkan" : "Employee dinonaktifkan",
+      data: { id: updated.id, isActive: updated.isActive },
+    });
+  } catch (err) {
+    console.error("toggleEmployeeStatus error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to toggle employee status",
+    });
+  }
+}
+
+/**
+ * PATCH /api/employees/:id/terminate
+ * Terminate employee (PHK/Resign) - permanen
+ */
+export async function terminateEmployee(req, res) {
+  try {
+    const { id } = req.params;
+    const { type } = req.body; // resign | terminated
+    const { companyId, role } = req.user;
+
+    if (role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin only",
+      });
+    }
+
+    if (!type || !["resign", "terminated"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Type harus 'resign' atau 'terminated'",
+      });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    if (employee.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden access",
+      });
+    }
+
+    if (employee.terminationType) {
+      return res.status(400).json({
+        success: false,
+        message: `Employee sudah di-${employee.terminationType}`,
+      });
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id: Number(id) },
+      data: {
+        isActive: false,
+        terminationType: type,
+        terminatedAt: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: type === "resign" ? "Employee telah diresignkan" : "Employee telah di-terminate (PHK)",
+      data: {
+        id: updated.id,
+        isActive: updated.isActive,
+        terminationType: updated.terminationType,
+        terminatedAt: updated.terminatedAt,
+      },
+    });
+  } catch (err) {
+    console.error("terminateEmployee error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to terminate employee",
     });
   }
 }

@@ -8,7 +8,9 @@ import {
   getEmployeeById,
   deleteEmployee,
   updateAvatar,
-  getMyEmployee
+  getMyEmployee,
+  toggleEmployeeStatus,
+  terminateEmployee,
   
 } from "../controllers/employeeController.js";
 
@@ -44,5 +46,9 @@ r.delete("/:id", auth(true), deleteEmployee);
 
 // AVATAR (opsional)
 r.put("/:id/avatar", auth(true), upload.single("avatar"), updateAvatar);
+
+// ✅ TOGGLE STATUS & TERMINATE
+r.patch("/:id/toggle-status", auth(true), toggleEmployeeStatus);
+r.patch("/:id/terminate", auth(true), terminateEmployee);
 
 export default r;

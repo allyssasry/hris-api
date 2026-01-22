@@ -189,6 +189,11 @@ model Employee {
   education     String? // ⭐ Pendidikan terakhir
   avatar        String?
 
+  // ===== STATUS KEAKTIFAN =====
+  isActive        Boolean   @default(true)  // false = nonaktifkan sementara
+  terminationType String?   @db.VarChar(20) // resign | terminated (PHK)
+  terminatedAt    DateTime?                 // tanggal resign/terminated
+
   // ===== RELASI COMPANY =====
   companyId Int
   company   Company @relation(fields: [companyId], references: [id])
