@@ -1,5 +1,6 @@
 // src/controllers/employeeController.js
 import { prisma } from "../utils/prisma.js";
+import { sendEmployeeCredentials } from "../services/emailService.js";
 const NEW_EMPLOYEE_WINDOW_HOURS = 24; // tinggal ganti angka
 
 function isNewEmployee(createdAt) {
@@ -289,12 +290,53 @@ export async function createEmployee(req, res) {
       return { user, employee };
     });
 
+    // ===================== SEND EMAIL CREDENTIALS =====================
+    // Get company name for email
+    let companyName = "Perusahaan";
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { name: true }
+      });
+      if (company?.name) {
+        companyName = company.name;
+      }
+    } catch (e) {
+      console.log("Could not fetch company name:", e.message);
+    }
+
+    // Send email (don't await - do it in background)
+    if (email) {
+      const employeeName = lastName ? `${firstName} ${lastName}` : firstName;
+      
+      sendEmployeeCredentials({
+        to: email,
+        employeeName,
+        employeeId,
+        email,
+        password, // plain password sebelum di-hash
+        companyName,
+        loginUrl: process.env.FRONTEND_URL 
+          ? `${process.env.FRONTEND_URL}/sign-in` 
+          : 'http://localhost:5173/sign-in'
+      }).then(result => {
+        if (result.success) {
+          console.log(`✅ Email kredensial terkirim ke ${email}`);
+        } else {
+          console.log(`⚠️ Gagal kirim email ke ${email}: ${result.error}`);
+        }
+      });
+    }
+
     return res.status(201).json({
       success: true,
-      message: "Employee berhasil dibuat & bisa login",
+      message: email 
+        ? "Employee berhasil dibuat & kredensial dikirim ke email" 
+        : "Employee berhasil dibuat & bisa login",
       data: {
         employeeId: result.employee.employeeId,
         userId: result.user.id,
+        emailSent: !!email,
       },
     });
   } catch (err) {
