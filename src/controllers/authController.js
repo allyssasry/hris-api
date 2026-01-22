@@ -54,16 +54,32 @@ export const signIn = async (req, res) => {
 
   const token = issueJWT(user);
 
+  // Cek jika user punya employee record (untuk dapat avatar dan position)
+  let employeeData = null;
+  if (user.role === "employee" || user.role === "user") {
+    employeeData = await prisma.employee.findFirst({
+      where: { userId: user.id },
+      select: {
+        avatar: true,
+        jobdesk: true,
+        firstName: true,
+        lastName: true,
+      }
+    });
+  }
+
   return res.json({
     token,
     user: {
       id: user.id,
       email: user.email,
       username: user.username,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role, // ← penting 
+      firstName: employeeData?.firstName || user.firstName,
+      lastName: employeeData?.lastName || user.lastName,
+      role: user.role,
       companyId: user.companyId,
+      avatar: employeeData?.avatar || user.avatar,
+      position: employeeData?.jobdesk || user.position || (user.role === "admin" ? "Admin" : null),
     },
   });
 };
@@ -73,59 +89,118 @@ export const signIn = async (req, res) => {
    ============================================================ */
 export async function signUp(req, res) {
   try {
-    const { firstName, lastName, email, username, password } = req.body;
+    // ✅ Sesuai dengan frontend SignUp.jsx
+    const { firstName, lastName, email, password, companyName } = req.body;
 
-    if (!email || !password || !username) {
+    // Validasi field wajib (sesuai frontend)
+    if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email, username, dan password wajib diisi.",
+        message: "First name, last name, email, dan password wajib diisi.",
       });
     }
 
-    // cek apakah email atau username sudah dipakai
-    const existing = await prisma.user.findFirst({
-      where: { OR: [{ email }, { username }] },
+    // Validasi email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Format email tidak valid.",
+      });
+    }
+
+    // Validasi password minimal 8 karakter (sesuai frontend)
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password minimal 8 karakter.",
+      });
+    }
+
+    // Cek apakah email sudah dipakai
+    const existingUser = await prisma.user.findFirst({
+      where: { email: email.toLowerCase() },
     });
 
-    if (existing) {
+    if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "Email atau username sudah digunakan.",
+        message: "Email sudah terdaftar. Silakan gunakan email lain atau login.",
       });
     }
 
-    // ⭐ ATURAN UTAMA: semua user yang sign-up = ADMIN
-    const userRole = "admin";
+    // Auto-generate username dari email (ambil bagian sebelum @)
+    let baseUsername = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+    let username = baseUsername;
+    let counter = 1;
+    
+    // Pastikan username unik
+    while (await prisma.user.findFirst({ where: { username } })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+    }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        firstName,
-        lastName,
-        email,
-        username,
-        password: hashedPassword,
-        role: userRole,
-      },
+    // ⭐ ATURAN UTAMA: semua user yang sign-up via form = ADMIN
+    const userRole = "admin";
+
+    // Buat user dan company dalam transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Buat User terlebih dahulu
+      const user = await tx.user.create({
+        data: {
+          firstName,
+          lastName,
+          email: email.toLowerCase(),
+          username,
+          password: hashedPassword,
+          role: userRole,
+        },
+      });
+
+      let company = null;
+
+      // 2. Jika companyName diisi, buat Company dan hubungkan
+      if (companyName && companyName.trim()) {
+        company = await tx.company.create({
+          data: {
+            name: companyName.trim(),
+            ownerId: user.id, // User ini jadi owner company
+          },
+        });
+
+        // 3. Update user dengan companyId
+        await tx.user.update({
+          where: { id: user.id },
+          data: { companyId: company.id },
+        });
+      }
+
+      return { user, company };
     });
 
     return res.status(201).json({
-      message: "Sign up berhasil!",
+      success: true,
+      message: "Sign up berhasil! Silakan login.",
       data: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role, // pasti admin
-        companyId: user.companyId,
+        id: result.user.id,
+        email: result.user.email,
+        username: result.user.username,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+        role: result.user.role,
+        companyId: result.company?.id || null,
+        companyName: result.company?.name || null,
       },
     });
   } catch (err) {
     console.error("SIGNUP ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Terjadi kesalahan saat sign up.",
-      error: err.message,
+      message: "Terjadi kesalahan saat sign up. Silakan coba lagi.",
+      error: process.env.NODE_ENV === "development" ? err.message : undefined,
     });
   }
 }
@@ -207,6 +282,8 @@ export async function employeeSignIn(req, res) {
       name: `${employee.firstName} ${employee.lastName || ""}`,
       role: "employee",
       companyId: company.id,
+      position: employee.jobdesk,
+      avatar: employee.avatar,
     });
     console.log("=============================================\n");
     return res.json({
@@ -216,9 +293,13 @@ export async function employeeSignIn(req, res) {
       user: {
         id: employee.User.id,
         employeeId: employee.id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
         name: `${employee.firstName} ${employee.lastName || ""}`.trim(),
         role: "employee",
         companyId: company.id,
+        avatar: employee.avatar || employee.User.avatar,
+        position: employee.jobdesk || employee.User.position,
       },
     });
   } catch (err) {

@@ -38,7 +38,7 @@ console.log("MAILTRAP TOKEN:", process.env.MAILTRAP_API_TOKEN);
     },
   });
 
-  const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+  const resetLink = `${process.env.FRONTEND_URL}/auth/set-new-password?token=${token}`;
 
   // ✅ GANTI SENDMAIL DENGAN MAILTRAP API
 const response = await fetch("https://send.api.mailtrap.io/api/send", {

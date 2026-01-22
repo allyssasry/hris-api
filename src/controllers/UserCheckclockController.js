@@ -247,6 +247,44 @@ export async function createUserCheckclock(req, res, next) {
       },
     });
 
+    // Send notification to all admins about new checkclock submission
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: "admin" },
+        select: { id: true },
+      });
+
+      const typeLabel = {
+        CLOCK_IN: "Clock In",
+        CLOCK_OUT: "Clock Out",
+        ABSENT: "Absent",
+        ANNUAL_LEAVE: "Annual Leave",
+        SICK_LEAVE: "Sick Leave",
+      }[normalizedType] || normalizedType;
+
+      await Promise.all(
+        admins.map((admin) =>
+          prisma.notification.create({
+            data: {
+              userId: admin.id,
+              fromUserId: req.user.id,
+              type: "CHECKCLOCK_SUBMITTED",
+              title: "Pengajuan Absensi Baru",
+              message: `${employee.firstName || "Employee"} ${employee.lastName || ""} mengajukan ${typeLabel} dan menunggu persetujuan.`,
+              data: {
+                checkclockId: created.id,
+                type: normalizedType,
+                employeeId,
+              },
+            },
+          })
+        )
+      );
+    } catch (notifErr) {
+      console.error("Failed to notify admins:", notifErr);
+      // Don't fail the create operation if notification fails
+    }
+
     res.status(201).json({ data: created });
   } catch (err) {
     console.error("createUserCheckclock error:", err);

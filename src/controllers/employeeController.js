@@ -405,14 +405,54 @@ if (
 export async function deleteEmployee(req, res) {
   try {
     const { id } = req.params;
+    const employeeId = Number(id);
 
-    await prisma.employee.delete({
-      where: { id: Number(id) },
+    // Cari employee dulu untuk validasi
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: {
+        EmployeeCredential: true,
+        checkClocks: true,
+      },
     });
 
-    res.json({ status: "success", message: "Employee deleted" });
+    if (!employee) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Employee not found" 
+      });
+    }
+
+    // Hapus dalam transaction agar konsisten
+    await prisma.$transaction(async (tx) => {
+      // 1. Hapus semua CheckClock terkait employee
+      if (employee.checkClocks.length > 0) {
+        await tx.checkClock.deleteMany({
+          where: { employeeId: employeeId },
+        });
+      }
+
+      // 2. Hapus EmployeeCredential (sudah punya onDelete: Cascade, tapi jaga-jaga)
+      if (employee.EmployeeCredential.length > 0) {
+        await tx.employeeCredential.deleteMany({
+          where: { employeeId: employeeId },
+        });
+      }
+
+      // 3. Hapus Employee
+      await tx.employee.delete({
+        where: { id: employeeId },
+      });
+    });
+
+    res.json({ success: true, status: "success", message: "Employee deleted" });
   } catch (err) {
-    res.status(500).json({ error: "Failed to delete employee" });
+    console.error("Error deleting employee:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to delete employee",
+      details: err.message 
+    });
   }
 }
 export async function updateAvatar(req, res) {

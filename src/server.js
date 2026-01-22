@@ -14,10 +14,14 @@ import salaryRoutes from './routes/salaries.js';
 import letterRoutes from './routes/letters.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import passwordRoutes from './routes/passwordRoutes.js';
+import profileRoutes from './routes/profileRoutes.js';
 import adminCheckclockRoutes from "./routes/adminCheckclockRoutes.js";
 import userCheckclockRoutes from './routes/userCheckclockRoutes.js';
 import leaveRoutes from './routes/leave.routes.js';
 import companyRoutes from "./routes/companyRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import scheduleRoutes from "./routes/scheduleRoutes.js";
+import locationRoutes from "./routes/locationRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,13 +80,17 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // API ROUTES
 app.use("/api/auth", authRoutes);
 app.use("/api/password", passwordRoutes);
+app.use("/api/profile", profileRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/salaries", salaryRoutes);
 app.use("/api/letters", letterRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/user", userCheckclockRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/locations", locationRoutes);
 
 app.use("/api/admin/checkclock", adminCheckclockRoutes);
+app.use("/api/schedules", scheduleRoutes);
 
 app.use("/api/company", companyRoutes);
 // 🛑 Penting: HAPUS ROUTE CHECKCLOCK LAMA

@@ -147,17 +147,29 @@ export async function listAdminCheckclocks(req, res, next) {
     status: displayStatus,
     approval: c.approval ?? "PENDING",
     createdByRole: c.approvedBy ? "admin" : "user", // ✅ PENTING
-canClockOut:
-    c.type === "CLOCK_IN" &&
-    !c.clockOutTime &&
-    !isLeave,
+    canClockOut:
+      c.type === "CLOCK_IN" &&
+      !c.clockOutTime &&
+      !isLeave,
 
     startDate: c.startDate ?? null,
     endDate: c.endDate ?? null,
 
+    // ✅ LOCATION DATA
+    locationName: c.locationName ?? null,
+    address: c.address ?? null,
+    latitude: c.latitude ?? null,
+    longitude: c.longitude ?? null,
+
     notes: c.notes ?? null,
+    
+    // ✅ CLOCK IN PROOF
     proofUrl: c.proofPath,
     proofName: c.proofName,
+    
+    // ✅ CLOCK OUT PROOF (NEW)
+    clockOutProofUrl: c.clockOutProofPath ?? null,
+    clockOutProofName: c.clockOutProofName ?? null,
   };
 });
 
@@ -227,6 +239,11 @@ export async function createAdminCheckclock(req, res, next) {
           clockOutTime: now,
           approvedBy: req.user.id,
           approvedAt: now,
+          // Save clock out proof
+          clockOutProofPath: proofFile
+            ? `/uploads/checkclock-proofs/${proofFile.filename}`
+            : null,
+          clockOutProofName: proofFile ? proofFile.originalname : null,
         },
       });
 
@@ -309,15 +326,64 @@ export async function approveAdminCheckclock(req, res, next) {
 
     const { id } = req.params;
     const { approved } = req.body;
+    const approvalStatus = approved ? "APPROVED" : "REJECTED";
+
+    // Get checkclock with employee info before update
+    const checkclock = await prisma.checkClock.findUnique({
+      where: { id: Number(id) },
+      include: { 
+        employee: {
+          select: { id: true, firstName: true, lastName: true, userId: true }
+        } 
+      },
+    });
+
+    if (!checkclock) {
+      return res.status(404).json({ message: "Checkclock not found" });
+    }
 
     const updated = await prisma.checkClock.update({
       where: { id: Number(id) },
       data: {
-        approval: approved ? "APPROVED" : "REJECTED",
+        approval: approvalStatus,
         approvedBy: req.user.id,
         approvedAt: new Date(),
       },
     });
+
+    // Send notification to employee
+    if (checkclock.employee?.userId) {
+      const employeeName = `${checkclock.employee.firstName || ""} ${checkclock.employee.lastName || ""}`.trim();
+      const typeLabel = {
+        CLOCK_IN: "Clock In",
+        CLOCK_OUT: "Clock Out",
+        ABSENT: "Absent",
+        ANNUAL_LEAVE: "Annual Leave",
+        SICK_LEAVE: "Sick Leave",
+      }[checkclock.type] || checkclock.type;
+
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: checkclock.employee.userId,
+            fromUserId: req.user.id,
+            type: approved ? "CHECKCLOCK_APPROVED" : "CHECKCLOCK_REJECTED",
+            title: approved ? "Absensi Disetujui" : "Absensi Ditolak",
+            message: approved 
+              ? `Permintaan ${typeLabel} Anda telah disetujui oleh Admin.`
+              : `Permintaan ${typeLabel} Anda telah ditolak oleh Admin.`,
+            data: {
+              checkclockId: checkclock.id,
+              type: checkclock.type,
+              employeeId: checkclock.employeeId,
+            },
+          },
+        });
+      } catch (notifErr) {
+        console.error("Failed to create notification:", notifErr);
+        // Don't fail the approve operation if notification fails
+      }
+    }
 
     res.json({ data: updated });
   } catch (err) {

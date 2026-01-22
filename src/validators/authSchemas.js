@@ -7,15 +7,17 @@ export const signInSchema = z.object({
   password:   z.string().min(6, "password too short"),
 });
 
-/** username opsional – boleh kosong/null, otomatis jadi null */
+/** 
+ * Sign Up Schema - sesuai dengan frontend SignUp.jsx
+ * Frontend mengirim: firstName, lastName, email, password, confirmPassword, companyName
+ */
 export const signUpSchema = z.object({
-  firstName: z.string().trim().min(1, "first name required"),
-  lastName:  z.string().trim().min(1, "last name required"),
-  email:     z.string().trim().toLowerCase().email("invalid email"),
-  username:  z.string().trim().min(3, "min 3 chars")
-                .optional().nullable()
-                .transform(v => (v && v.length ? v.toLowerCase() : null)),
-  password:  z.string().min(8, "min 8 chars"),
+  firstName:       z.string().trim().min(1, "First name is required"),
+  lastName:        z.string().trim().min(1, "Last name is required"),
+  email:           z.string().trim().toLowerCase().email("Invalid email format"),
+  password:        z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string().optional(), // Frontend sends this for validation
+  companyName:     z.string().trim().optional().nullable(), // Opsional
 });
 
 /** (opsional) employee login */

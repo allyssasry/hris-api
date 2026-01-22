@@ -79,6 +79,19 @@ model User {
 
   firstName String?
   lastName  String?
+  
+  // Profile fields (untuk admin dan user yang tidak punya employee record)
+  phone       String?   @db.VarChar(50)
+  nik         String?   @db.VarChar(50)
+  gender      String?   @db.VarChar(10)
+  birthDate   DateTime?
+  birthPlace  String?   @db.VarChar(100)
+  education   String?   @db.VarChar(50)
+  bank        String?   @db.VarChar(50)
+  accountName String?   @db.VarChar(100)
+  accountNumber String? @db.VarChar(100)
+  avatar      String?
+  position    String?   @db.VarChar(100) // CEO, Manager, Staff, dll
 
   role String @default("user") // user | admin
 
@@ -100,6 +113,10 @@ model User {
   letters         Letter[]          @relation("LetterOwner")
   userShifts      UserShift[]
   leaves          Leave[]
+  
+  // Notifications
+  notifications     Notification[] @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationSender")
 
   resetPasswordToken String?
   resetPasswordExp   DateTime?
@@ -119,8 +136,33 @@ model Company {
   // ===== EMPLOYEE =====
   employees Employee[]
 
+  // ===== LOKASI KANTOR =====
+  locations CompanyLocation[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/**
+ * ================= COMPANY LOCATION =================
+ * Lokasi kantor yang bisa dipilih saat checkclock
+ */
+model CompanyLocation {
+  id        Int     @id @default(autoincrement())
+  name      String  @db.VarChar(100) // "Kantor Pusat", "Kantor Jakarta", dll
+  address   String? @db.VarChar(255) // Alamat lengkap (opsional)
+  latitude  Float
+  longitude Float
+  isActive  Boolean @default(true)
+
+  // ===== RELASI COMPANY =====
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 /**
@@ -268,8 +310,14 @@ model CheckClock {
   latitude     Float?
   longitude    Float?
   notes        String?
+  
+  // Clock In proof
   proofPath    String?
   proofName    String?
+  
+  // Clock Out proof (NEW)
+  clockOutProofPath String?
+  clockOutProofName String?
 
   startDate DateTime?
   endDate   DateTime?
@@ -380,4 +428,27 @@ model Letter {
   format   LetterFormat @relation(fields: [letterFormatId], references: [id], onDelete: Restrict)
   owner    User         @relation("LetterOwner", fields: [userId], references: [id], onDelete: Cascade)
   approver User?        @relation("LetterApprover", fields: [approverId], references: [id], onDelete: SetNull)
+}
+
+/**
+ * ================= NOTIFICATION =================
+ */
+
+model Notification {
+  id          Int       @id @default(autoincrement())
+  userId      Int       // Recipient user ID
+  fromUserId  Int?      // Sender user ID (null for system notifications)
+  type        String    // CHECKCLOCK_APPROVED, CHECKCLOCK_REJECTED, CHECKCLOCK_SUBMITTED, etc.
+  title       String
+  message     String    @db.Text
+  data        Json?     // Additional data (e.g., checkclockId, employeeId)
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user     User  @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  fromUser User? @relation("NotificationSender", fields: [fromUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
 }
