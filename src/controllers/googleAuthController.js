@@ -116,6 +116,33 @@ export const googleSignIn = async (req, res) => {
        ======================================================= */
     const token = issueJWT(user);
 
+    // Cek jika user punya employee record
+    const employeeData = await prisma.employee.findFirst({
+      where: { userId: user.id },
+      select: {
+        avatar: true,
+        jobdesk: true,
+        firstName: true,
+        lastName: true,
+      }
+    });
+
+    // Avatar URL - prioritas Google avatar > employee > user
+    const rawAvatar = employeeData?.avatar || user.avatar || payload.picture;
+    const avatarUrl = rawAvatar 
+      ? (rawAvatar.startsWith('http') ? rawAvatar : `${process.env.BASE_URL || 'http://localhost:4000'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
+      : null;
+
+    // Position logic
+    let position = null;
+    if (employeeData?.jobdesk) {
+      position = employeeData.jobdesk;
+    } else if (user.position) {
+      position = user.position;
+    } else if (user.role === "admin") {
+      position = "Admin";
+    }
+
     return res.json({
       ok: true,
       message: "Google Sign In Success",
@@ -124,9 +151,11 @@ export const googleSignIn = async (req, res) => {
         id: user.id,
         email: user.email,
         username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role, // ✔ hasil = admin
+        firstName: employeeData?.firstName || user.firstName,
+        lastName: employeeData?.lastName || user.lastName,
+        role: user.role,
+        avatarUrl, // ✅ Full URL
+        position,  // ✅ Position
       },
     });
   } catch (err) {

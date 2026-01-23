@@ -24,26 +24,46 @@ export const me = async (req, res) => {
     }
 
     // Cek jika user punya employee record (untuk dapat position dari jobdesk)
-    let employeeData = null;
-    if (user.role === "employee" || user.role === "user") {
-      employeeData = await prisma.employee.findFirst({
-        where: { userId: user.id },
-        select: {
-          avatar: true,
-          jobdesk: true, // position/jabatan
-          firstName: true,
-          lastName: true,
-        }
-      });
-    }
+    // Query employee untuk SEMUA user, karena admin juga bisa punya employee record
+    const employeeData = await prisma.employee.findFirst({
+      where: { userId: user.id },
+      select: {
+        avatar: true,
+        jobdesk: true, // position/jabatan
+        firstName: true,
+        lastName: true,
+      }
+    });
+
+    console.log("🔍 authMe - user:", user);
+    console.log("🔍 authMe - employeeData:", employeeData);
 
     // Gabungkan data - prioritas Employee > User
+    const rawAvatar = employeeData?.avatar || user.avatar;
+    // Convert avatar path ke full URL
+    const avatarUrl = rawAvatar 
+      ? (rawAvatar.startsWith('http') ? rawAvatar : `${process.env.BASE_URL || 'http://localhost:4000'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
+      : null;
+
+    // Position logic - prioritas: Employee.jobdesk > User.position > role fallback
+    let position = null;
+    if (employeeData?.jobdesk) {
+      position = employeeData.jobdesk;
+    } else if (user.position) {
+      position = user.position;
+    } else if (user.role === "admin") {
+      position = "Admin";
+    }
+    // Jika masih null, frontend akan fallback ke "Employee" atau "User"
+
+    console.log("🔍 authMe - final position:", position);
+
     const userData = {
       ...user,
       firstName: employeeData?.firstName || user.firstName,
       lastName: employeeData?.lastName || user.lastName,
-      avatar: employeeData?.avatar || user.avatar,
-      position: employeeData?.jobdesk || user.position || (user.role === "admin" ? "Admin" : null),
+      avatarUrl, // ✅ Gunakan avatarUrl dengan full URL
+      position,  // ✅ Position dari jobdesk/position/role
     };
 
     res.json({

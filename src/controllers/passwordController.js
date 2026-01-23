@@ -206,6 +206,40 @@ export const forgotPassword = async (req, res) => {
 
 
 /* =========================================================
+   VERIFY RESET TOKEN (CEK APAKAH TOKEN MASIH VALID)
+   ========================================================= */
+export const verifyResetToken = async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).json({ 
+      valid: false, 
+      message: "Token tidak ditemukan" 
+    });
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      resetPasswordToken: token,
+      resetPasswordExp: { gte: new Date() },
+    },
+  });
+
+  if (!user) {
+    return res.status(400).json({ 
+      valid: false, 
+      message: "Token tidak valid atau sudah expired" 
+    });
+  }
+
+  return res.json({ 
+    valid: true, 
+    message: "Token valid" 
+  });
+};
+
+
+/* =========================================================
    RESET PASSWORD
    ========================================================= */
 export const resetPassword = async (req, res) => {
@@ -213,11 +247,12 @@ export const resetPassword = async (req, res) => {
 
   if (!token || !password)
     return res.status(400).json({ message: "Data tidak lengkap" });
-if (password.length < 6) {
-  return res.status(400).json({
-    message: "Password minimal 6 karakter",
-  });
-}
+    
+  if (password.length < 6) {
+    return res.status(400).json({
+      message: "Password minimal 6 karakter",
+    });
+  }
 
   const user = await prisma.user.findFirst({
     where: {

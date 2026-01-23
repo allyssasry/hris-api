@@ -92,7 +92,13 @@ export const getProfile = async (req, res) => {
       bank: employee?.bank || user.bank,
       accountName: employee?.accountName || user.accountName,
       accountNumber: employee?.accountNumber || user.accountNumber,
-      avatar: employee?.avatar || user.avatar,
+      // ✅ avatarUrl dengan full URL
+      avatarUrl: (() => {
+        const rawAvatar = employee?.avatar || user.avatar;
+        if (!rawAvatar) return null;
+        const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+        return rawAvatar.startsWith('http') ? rawAvatar : `${baseUrl}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`;
+      })(),
       // Position/role display
       position: employee?.jobdesk || user.position || (user.role === "admin" ? "Admin" : null),
       employeeId: employee?.employeeId || null,
@@ -258,10 +264,14 @@ export const updateAvatar = async (req, res) => {
       });
     }
 
+    // ✅ Return avatarUrl dengan full URL
+    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    const avatarUrl = `${baseUrl}${avatarPath}`;
+
     res.json({
       success: true,
       message: "Avatar berhasil diperbarui",
-      data: { avatar: avatarPath },
+      data: { avatarUrl },
     });
   } catch (err) {
     console.error("UPDATE AVATAR ERROR:", err);

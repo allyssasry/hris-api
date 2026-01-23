@@ -55,17 +55,31 @@ export const signIn = async (req, res) => {
   const token = issueJWT(user);
 
   // Cek jika user punya employee record (untuk dapat avatar dan position)
-  let employeeData = null;
-  if (user.role === "employee" || user.role === "user") {
-    employeeData = await prisma.employee.findFirst({
-      where: { userId: user.id },
-      select: {
-        avatar: true,
-        jobdesk: true,
-        firstName: true,
-        lastName: true,
-      }
-    });
+  // Query untuk SEMUA user, karena admin juga bisa punya employee record
+  const employeeData = await prisma.employee.findFirst({
+    where: { userId: user.id },
+    select: {
+      avatar: true,
+      jobdesk: true,
+      firstName: true,
+      lastName: true,
+    }
+  });
+
+  // Avatar URL - convert path ke full URL
+  const rawAvatar = employeeData?.avatar || user.avatar;
+  const avatarUrl = rawAvatar 
+    ? (rawAvatar.startsWith('http') ? rawAvatar : `${process.env.BASE_URL || 'http://localhost:4000'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
+    : null;
+
+  // Position logic
+  let position = null;
+  if (employeeData?.jobdesk) {
+    position = employeeData.jobdesk;
+  } else if (user.position) {
+    position = user.position;
+  } else if (user.role === "admin") {
+    position = "Admin";
   }
 
   return res.json({
@@ -78,8 +92,8 @@ export const signIn = async (req, res) => {
       lastName: employeeData?.lastName || user.lastName,
       role: user.role,
       companyId: user.companyId,
-      avatar: employeeData?.avatar || user.avatar,
-      position: employeeData?.jobdesk || user.position || (user.role === "admin" ? "Admin" : null),
+      avatarUrl, // ✅ Full URL
+      position,  // ✅ Dari jobdesk/position
     },
   });
 };
@@ -286,6 +300,13 @@ export async function employeeSignIn(req, res) {
       avatar: employee.avatar,
     });
     console.log("=============================================\n");
+
+    // Avatar URL - convert path ke full URL
+    const rawAvatar = employee.avatar || employee.User.avatar;
+    const avatarUrl = rawAvatar 
+      ? (rawAvatar.startsWith('http') ? rawAvatar : `${process.env.BASE_URL || 'http://localhost:4000'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
+      : null;
+
     return res.json({
       success: true,
       message: "Login employee berhasil",
@@ -298,7 +319,7 @@ export async function employeeSignIn(req, res) {
         name: `${employee.firstName} ${employee.lastName || ""}`.trim(),
         role: "employee",
         companyId: company.id,
-        avatar: employee.avatar || employee.User.avatar,
+        avatarUrl, // ✅ Full URL
         position: employee.jobdesk || employee.User.position,
       },
     });
