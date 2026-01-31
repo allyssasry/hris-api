@@ -54,17 +54,30 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/uploads/avatars', express.static(path.join(process.cwd(), 'uploads/avatars')));
 
-// CORS
+// CORS - Production Ready
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:3000",
-];
+  // Add your Vercel frontend URLs here
+  process.env.FRONTEND_URL,
+  "https://cmlabs-hris-17.vercel.app",  // Ganti dengan URL Vercel kamu
+].filter(Boolean);
 
 app.use(cors({
   origin(origin, cb) {
-    if (!origin || allowedOrigins.includes(origin)) cb(null, true);
-    else cb(new Error("Not allowed by CORS: " + origin));
+    // Allow requests with no origin (mobile apps, Postman, etc)
+    if (!origin) return cb(null, true);
+    
+    // Check if origin is allowed or matches vercel pattern
+    if (allowedOrigins.includes(origin) || 
+        origin.endsWith('.vercel.app') ||
+        origin.includes('vercel.app')) {
+      cb(null, true);
+    } else {
+      console.log('CORS blocked:', origin);
+      cb(new Error("Not allowed by CORS: " + origin));
+    }
   },
   credentials: true
 }));

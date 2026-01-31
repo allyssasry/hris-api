@@ -375,10 +375,17 @@ export async function approveAdminCheckclock(req, res, next) {
       }[checkclock.type] || checkclock.type;
 
       try {
+        // Get employee's companyId for multi-tenancy
+        const employeeCompany = await prisma.employee.findUnique({
+          where: { id: checkclock.employeeId },
+          select: { companyId: true }
+        });
+
         await prisma.notification.create({
           data: {
             userId: checkclock.employee.userId,
             fromUserId: req.user.id,
+            companyId: employeeCompany?.companyId || req.user.companyId,  // 🔑 Include companyId
             type: approved ? "CHECKCLOCK_APPROVED" : "CHECKCLOCK_REJECTED",
             title: approved ? "Absensi Disetujui" : "Absensi Ditolak",
             message: approved 
@@ -388,6 +395,7 @@ export async function approveAdminCheckclock(req, res, next) {
               checkclockId: checkclock.id,
               type: checkclock.type,
               employeeId: checkclock.employeeId,
+              companyId: employeeCompany?.companyId,
             },
           },
         });

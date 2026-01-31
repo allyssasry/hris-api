@@ -247,39 +247,57 @@ export async function createUserCheckclock(req, res, next) {
       },
     });
 
-    // Send notification to all admins about new checkclock submission
+    // Send notification to admins OF THE SAME COMPANY about new checkclock submission
     try {
-      const admins = await prisma.user.findMany({
-        where: { role: "admin" },
-        select: { id: true },
+      // Get employee's companyId for multi-tenancy filtering
+      const employeeCompany = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { companyId: true }
       });
 
-      const typeLabel = {
-        CLOCK_IN: "Clock In",
-        CLOCK_OUT: "Clock Out",
-        ABSENT: "Absent",
-        ANNUAL_LEAVE: "Annual Leave",
-        SICK_LEAVE: "Sick Leave",
-      }[normalizedType] || normalizedType;
+      if (!employeeCompany?.companyId) {
+        console.error("Employee has no companyId, skipping admin notification");
+      } else {
+        // Only get admins from the SAME company
+        const admins = await prisma.user.findMany({
+          where: { 
+            role: "admin",
+            companyId: employeeCompany.companyId  // 🔑 Filter by company
+          },
+          select: { id: true },
+        });
 
-      await Promise.all(
-        admins.map((admin) =>
-          prisma.notification.create({
-            data: {
-              userId: admin.id,
-              fromUserId: req.user.id,
-              type: "CHECKCLOCK_SUBMITTED",
-              title: "Pengajuan Absensi Baru",
-              message: `${employee.firstName || "Employee"} ${employee.lastName || ""} mengajukan ${typeLabel} dan menunggu persetujuan.`,
+        console.log(`[Notification] Sending to ${admins.length} admins of company ${employeeCompany.companyId}`);
+
+        const typeLabel = {
+          CLOCK_IN: "Clock In",
+          CLOCK_OUT: "Clock Out",
+          ABSENT: "Absent",
+          ANNUAL_LEAVE: "Annual Leave",
+          SICK_LEAVE: "Sick Leave",
+        }[normalizedType] || normalizedType;
+
+        await Promise.all(
+          admins.map((admin) =>
+            prisma.notification.create({
               data: {
-                checkclockId: created.id,
-                type: normalizedType,
-                employeeId,
+                userId: admin.id,
+                fromUserId: req.user.id,
+                companyId: employeeCompany.companyId,  // 🔑 Include companyId
+                type: "CHECKCLOCK_SUBMITTED",
+                title: "Pengajuan Absensi Baru",
+                message: `${employee.firstName || "Employee"} ${employee.lastName || ""} mengajukan ${typeLabel} dan menunggu persetujuan.`,
+                data: {
+                  checkclockId: created.id,
+                  type: normalizedType,
+                  employeeId,
+                  companyId: employeeCompany.companyId,
+                },
               },
-            },
-          })
-        )
-      );
+            })
+          )
+        );
+      }
     } catch (notifErr) {
       console.error("Failed to notify admins:", notifErr);
       // Don't fail the create operation if notification fails

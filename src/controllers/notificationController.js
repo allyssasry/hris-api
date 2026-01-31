@@ -204,16 +204,17 @@ export async function notifyAdmins({ fromUserId, type, title, message, data }) {
 export async function notifyEmployee({
   employeeId,
   fromUserId,
+  companyId,  // 🔑 Added for multi-tenancy
   type,
   title,
   message,
   data,
 }) {
   try {
-    // Find employee's user account
+    // Find employee's user account and companyId
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { userId: true, firstName: true, lastName: true },
+      select: { userId: true, companyId: true, firstName: true, lastName: true },
     });
 
     if (!employee?.userId) {
@@ -224,6 +225,7 @@ export async function notifyEmployee({
     return createNotification({
       userId: employee.userId,
       fromUserId,
+      companyId: companyId || employee.companyId,  // 🔑 Use employee's company if not provided
       type,
       title,
       message,
