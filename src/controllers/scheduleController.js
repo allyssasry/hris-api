@@ -342,6 +342,19 @@ export async function updateSchedule(req, res) {
     const { employeeId } = req.params;
     const { shiftType, schedules } = req.body;
 
+    console.log('===== UPDATE SCHEDULE =====');
+    console.log('Employee ID:', employeeId);
+    console.log('Shift Type:', shiftType);
+    console.log('Schedules:', JSON.stringify(schedules, null, 2));
+
+    // Validate input
+    if (!shiftType || !schedules) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'shiftType and schedules are required' 
+      });
+    }
+
     // Find employee
     const employee = await prisma.employee.findUnique({
       where: { id: parseInt(employeeId) },
@@ -350,7 +363,11 @@ export async function updateSchedule(req, res) {
           include: {
             userShifts: {
               where: { effectiveTo: null },
-              include: { setting: true },
+              include: { 
+                setting: {
+                  include: { times: true }
+                } 
+              },
               take: 1
             }
           }
@@ -359,56 +376,112 @@ export async function updateSchedule(req, res) {
     });
 
     if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Employee not found' 
+      });
     }
 
-    // Check if setting with this name exists
-    let setting = await prisma.checkClockSetting.findFirst({
-      where: { name: shiftType, isActive: true }
+    // Check if employee has a linked User account
+    if (!employee.User) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Karyawan ini belum memiliki akun user yang terhubung. Silakan buat akun user untuk karyawan ini terlebih dahulu.' 
+      });
+    }
+
+    const currentShift = employee.User.userShifts?.[0];
+    const currentSetting = currentShift?.setting;
+
+    // Convert schedules object to times array
+    const newTimes = Object.entries(schedules).map(([dayName, schedule]) => {
+      const dayNum = Object.entries(dayMapping).find(([_, name]) => name === dayName)?.[0];
+      return {
+        day: parseInt(dayNum),
+        clockInMinutes: schedule.isOff ? null : timeToMinutes(schedule.start),
+        clockOutMinutes: schedule.isOff ? null : timeToMinutes(schedule.end),
+        breakStartMinutes: null,
+        breakEndMinutes: null
+      };
     });
 
-    // If not, create new setting
-    if (!setting) {
-      setting = await prisma.checkClockSetting.create({
-        data: {
-          name: shiftType,
-          type: shiftType.toLowerCase().includes('shift') ? 'shift' : 'regular',
-          isActive: true,
-          times: {
-            create: Object.entries(schedules).map(([dayName, schedule]) => {
-              const dayNum = Object.entries(dayMapping).find(([_, name]) => name === dayName)?.[0];
-              return {
-                day: parseInt(dayNum),
-                clockInMinutes: schedule.isOff ? null : timeToMinutes(schedule.start),
-                clockOutMinutes: schedule.isOff ? null : timeToMinutes(schedule.end),
-                breakStartMinutes: null,
-                breakEndMinutes: null
-              };
-            })
-          }
+    // Check if current setting is used by other users
+    let usersUsingCurrentSetting = 0;
+    if (currentSetting) {
+      usersUsingCurrentSetting = await prisma.userShift.count({
+        where: {
+          checkClockSettingId: currentSetting.id,
+          effectiveTo: null
         }
       });
     }
 
-    // End current shift and assign new one
-    if (employee.User) {
-      await prisma.userShift.updateMany({
-        where: {
-          userId: employee.User.id,
-          effectiveTo: null
-        },
-        data: { effectiveTo: new Date() }
+    console.log('Current Setting:', currentSetting?.name, '(ID:', currentSetting?.id, ')');
+    console.log('Users using this setting:', usersUsingCurrentSetting);
+
+    let settingToUse;
+
+    // If current setting is only used by this user, update it directly
+    if (currentSetting && usersUsingCurrentSetting === 1) {
+      console.log('Updating existing setting directly (single user)');
+      
+      // Update existing setting name if changed
+      if (currentSetting.name !== shiftType) {
+        await prisma.checkClockSetting.update({
+          where: { id: currentSetting.id },
+          data: { name: shiftType }
+        });
+      }
+
+      // Delete old times and create new ones
+      await prisma.checkClockSettingTime.deleteMany({
+        where: { checkClockSettingId: currentSetting.id }
       });
 
+      await prisma.checkClockSettingTime.createMany({
+        data: newTimes.map(t => ({
+          ...t,
+          checkClockSettingId: currentSetting.id
+        }))
+      });
+
+      settingToUse = currentSetting;
+    } else {
+      // Create a NEW custom setting for this employee (unique name)
+      console.log('Creating NEW setting (shared or no existing)');
+      const uniqueName = `${shiftType} - ${employee.firstName} ${employee.lastName || ''}`.trim();
+      
+      settingToUse = await prisma.checkClockSetting.create({
+        data: {
+          name: uniqueName,
+          type: shiftType.toLowerCase().includes('shift') ? 'shift' : 'regular',
+          isActive: true,
+          times: {
+            create: newTimes
+          }
+        }
+      });
+
+      // End current shift
+      if (currentShift) {
+        await prisma.userShift.update({
+          where: { id: currentShift.id },
+          data: { effectiveTo: new Date() }
+        });
+      }
+
+      // Create new shift assignment
       await prisma.userShift.create({
         data: {
           userId: employee.User.id,
-          checkClockSettingId: setting.id,
+          checkClockSettingId: settingToUse.id,
           effectiveFrom: new Date(),
           effectiveTo: null
         }
       });
     }
+
+    console.log('===== UPDATE COMPLETE =====');
 
     res.json({
       success: true,
@@ -416,7 +489,10 @@ export async function updateSchedule(req, res) {
     });
   } catch (err) {
     console.error('Update schedule error:', err);
-    res.status(500).json({ message: 'Failed to update schedule' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to update schedule: ' + (err.message || 'Unknown error') 
+    });
   }
 }
 
@@ -466,15 +542,15 @@ export async function getUnassignedEmployees(req, res) {
   try {
     const { companyId } = req.user;
 
+    // Get employees that:
+    // 1. Belong to this company
+    // 2. Have a linked User account (required for schedule assignment)
+    // 3. Don't have any active schedule (no userShifts with null effectiveTo)
     const employees = await prisma.employee.findMany({
       where: {
         companyId,
         User: {
-          userShifts: {
-            none: {
-              effectiveTo: null
-            }
-          }
+          isNot: null // Must have a linked User account
         }
       },
       select: {
@@ -483,13 +559,31 @@ export async function getUnassignedEmployees(req, res) {
         firstName: true,
         lastName: true,
         jobdesk: true,
-        branch: true
+        branch: true,
+        User: {
+          select: {
+            id: true,
+            userShifts: {
+              where: {
+                effectiveTo: null
+              },
+              select: {
+                id: true
+              }
+            }
+          }
+        }
       }
+    });
+
+    // Filter employees that don't have active shifts
+    const unassignedEmployees = employees.filter(emp => {
+      return !emp.User?.userShifts || emp.User.userShifts.length === 0;
     });
 
     res.json({
       success: true,
-      data: employees.map(e => ({
+      data: unassignedEmployees.map(e => ({
         id: e.id,
         employeeId: e.employeeId,
         name: `${e.firstName}${e.lastName ? ' ' + e.lastName : ''}`,

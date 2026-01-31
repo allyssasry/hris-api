@@ -1,10 +1,10 @@
 // src/controllers/employeeController.js
 import { prisma } from "../utils/prisma.js";
 import { sendEmployeeCredentials } from "../services/emailService.js";
-const NEW_EMPLOYEE_WINDOW_HOURS = 24; // tinggal ganti angka
+const NEW_EMPLOYEE_WINDOW_DAYS = 30; // New employee = 1 bulan sejak dibuat
 
 function isNewEmployee(createdAt) {
-  const WINDOW = NEW_EMPLOYEE_WINDOW_HOURS * 60 * 60 * 1000;
+  const WINDOW = NEW_EMPLOYEE_WINDOW_DAYS * 24 * 60 * 60 * 1000; // 30 hari dalam ms
   return Date.now() - new Date(createdAt).getTime() <= WINDOW;
 }
 
@@ -539,10 +539,10 @@ export async function updateAvatar(req, res) {
 
 /**
  * GET /api/employees/stats
+ * Selaras dengan logic di adminDashboardController.js
  */
 export async function getEmployeeStats(req, res) {
   try {
-    const { month, year } = req.query;
     const { companyId } = req.user;
 
     if (!companyId) {
@@ -552,62 +552,70 @@ export async function getEmployeeStats(req, res) {
       });
     }
 
-    const where = { companyId };
+    // Use Prisma count for accurate stats (same as dashboard)
+    const [total, active, past, newCount] = await Promise.all([
+      // Total employees
+      prisma.employee.count({
+        where: { companyId }
+      }),
+      // Active employees (isActive = true AND terminationType = null)
+      prisma.employee.count({
+        where: {
+          companyId,
+          isActive: true,
+          terminationType: null
+        }
+      }),
+      // Past employees (terminated/resigned OR inactive)
+      prisma.employee.count({
+        where: {
+          companyId,
+          OR: [
+            { terminationType: { not: null } },
+            { isActive: false }
+          ]
+        }
+      }),
+      // New employees (created within 30 days)
+      prisma.employee.count({
+        where: {
+          companyId,
+          createdAt: {
+            gte: new Date(Date.now() - NEW_EMPLOYEE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+          }
+        }
+      })
+    ]);
 
-    if (month && year) {
-      where.createdAt = {
-        gte: new Date(Number(year), Number(month) - 1, 1),
-        lt: new Date(Number(year), Number(month), 1),
-      };
-    }
-
-    const employees = await prisma.employee.findMany({
-      where,
-      select: {
-        createdAt: true,
-        contractType: true,
-        isActive: true,
-        terminationType: true,
-      },
-    });
+    // Status distribution (for active employees only)
+    const [permanent, contract, intern] = await Promise.all([
+      prisma.employee.count({
+        where: { companyId, contractType: "permanent", isActive: true, terminationType: null }
+      }),
+      prisma.employee.count({
+        where: { companyId, contractType: "contract", isActive: true, terminationType: null }
+      }),
+      prisma.employee.count({
+        where: { companyId, contractType: "intern", isActive: true, terminationType: null }
+      })
+    ]);
 
     const stats = {
-      total: employees.length,
-      new: 0,
-      active: 0,
-      past: 0, // resigned + terminated
+      total,
+      new: newCount,
+      active,
+      past
     };
 
     const statusDistribution = {
-      permanent: 0,
-      contract: 0,
-      intern: 0,
+      permanent,
+      contract,
+      intern
     };
 
-    employees.forEach((emp) => {
-      const type = (emp.contractType || "").toLowerCase();
-
-      // PAST EMPLOYEE (resigned / terminated)
-      if (emp.terminationType) {
-        stats.past++;
-        return;
-      }
-
-      // ACTIVE EMPLOYEE (isActive = true dan belum terminated)
-      if (emp.isActive) {
-        stats.active++;
-
-        // ✅ NEW (≤ 24 jam)
-        if (isNewEmployee(emp.createdAt)) {
-          stats.new++;
-        }
-
-        // STATUS DISTRIBUTION
-        if (type === "permanent") statusDistribution.permanent++;
-        else if (type === "contract") statusDistribution.contract++;
-        else if (type === "intern") statusDistribution.intern++;
-      }
-    });
+    console.log('===== EMPLOYEE STATS =====');
+    console.log('Company ID:', companyId);
+    console.log('Stats:', stats);
 
     return res.json({
       success: true,
