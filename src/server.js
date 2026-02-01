@@ -138,10 +138,15 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-// START SERVER
+// START SERVER (only when not in Vercel)
 const PORT = process.env.PORT || 4000;
 const HOST = "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
-  console.log(`HRIS API running at http://${HOST}:${PORT}`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, HOST, () => {
+    console.log(`HRIS API running at http://${HOST}:${PORT}`);
+  });
+}
+
+// Export for Vercel Serverless
+export default app;
