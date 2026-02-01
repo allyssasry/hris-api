@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -98,7 +99,7 @@ model User {
 
   // ===== RELASI COMPANY (ANGGOTA) =====
   companyId Int?
-  company   Company? @relation("CompanyUsers", fields: [companyId], references: [id])
+  company   Company? @relation("CompanyUsers", fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   // ===== RELASI COMPANY (OWNER) =====
   ownedCompanies Company[] @relation("CompanyOwner")
@@ -129,7 +130,7 @@ model Company {
 
   // ===== OWNER COMPANY =====
   ownerId Int
-  owner   User @relation("CompanyOwner", fields: [ownerId], references: [id])
+  owner   User @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   // ===== SEMUA USER DALAM COMPANY =====
   users User[] @relation("CompanyUsers")
