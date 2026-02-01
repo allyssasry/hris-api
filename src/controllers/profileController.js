@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import { prisma } from "../utils/prisma.js";
+import { uploadToCloudinary, deleteFromCloudinary, getPublicIdFromUrl } from "../utils/cloudinary.js";
 
 /**
  * GET /api/profile
@@ -212,7 +213,7 @@ export const updateProfile = async (req, res) => {
 
 /**
  * PUT /api/profile/avatar
- * Upload/update avatar user
+ * Upload/update avatar user - NOW USES CLOUDINARY
  */
 export const updateAvatar = async (req, res) => {
   try {
@@ -225,25 +226,32 @@ export const updateAvatar = async (req, res) => {
       });
     }
 
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
-
     // Get current user untuk cek avatar lama
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
 
-    // Hapus avatar lama jika ada
-    if (user?.avatar) {
-      const oldAvatarPath = path.join(process.cwd(), user.avatar);
-      if (fs.existsSync(oldAvatarPath)) {
-        fs.unlinkSync(oldAvatarPath);
+    // Delete old avatar from Cloudinary if exists
+    if (user?.avatar && user.avatar.includes('cloudinary')) {
+      const oldPublicId = getPublicIdFromUrl(user.avatar);
+      if (oldPublicId) {
+        await deleteFromCloudinary(oldPublicId);
       }
     }
 
-    // Update avatar di User table
+    // Upload new avatar to Cloudinary
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      'hris/avatars',
+      `avatar-${userId}-${Date.now()}`
+    );
+
+    const avatarUrl = uploadResult.url;
+
+    // Update avatar di User table dengan Cloudinary URL
     await prisma.user.update({
       where: { id: userId },
-      data: { avatar: avatarPath },
+      data: { avatar: avatarUrl },
     });
 
     // Juga update di Employee jika ada
@@ -252,21 +260,11 @@ export const updateAvatar = async (req, res) => {
     });
 
     if (employee) {
-      if (employee.avatar) {
-        const oldEmpAvatarPath = path.join(process.cwd(), employee.avatar);
-        if (fs.existsSync(oldEmpAvatarPath) && employee.avatar !== user?.avatar) {
-          fs.unlinkSync(oldEmpAvatarPath);
-        }
-      }
       await prisma.employee.update({
         where: { id: employee.id },
-        data: { avatar: avatarPath },
+        data: { avatar: avatarUrl },
       });
     }
-
-    // ✅ Return avatarUrl dengan full URL
-    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
-    const avatarUrl = `${baseUrl}${avatarPath}`;
 
     res.json({
       success: true,
@@ -277,14 +275,14 @@ export const updateAvatar = async (req, res) => {
     console.error("UPDATE AVATAR ERROR:", err);
     res.status(500).json({ 
       success: false, 
-      message: "Gagal memperbarui avatar" 
+      message: "Gagal memperbarui avatar: " + err.message 
     });
   }
 };
 
 /**
  * DELETE /api/profile/avatar
- * Hapus avatar user
+ * Hapus avatar user - NOW USES CLOUDINARY
  */
 export const deleteAvatar = async (req, res) => {
   try {
@@ -296,10 +294,12 @@ export const deleteAvatar = async (req, res) => {
     });
 
     if (user?.avatar) {
-      // Hapus file avatar
-      const avatarPath = path.join(process.cwd(), user.avatar);
-      if (fs.existsSync(avatarPath)) {
-        fs.unlinkSync(avatarPath);
+      // Delete from Cloudinary if it's a Cloudinary URL
+      if (user.avatar.includes('cloudinary')) {
+        const publicId = getPublicIdFromUrl(user.avatar);
+        if (publicId) {
+          await deleteFromCloudinary(publicId);
+        }
       }
 
       // Set avatar ke null di User
@@ -315,9 +315,24 @@ export const deleteAvatar = async (req, res) => {
     });
 
     if (employee?.avatar) {
-      const empAvatarPath = path.join(process.cwd(), employee.avatar);
-      if (fs.existsSync(empAvatarPath) && employee.avatar !== user?.avatar) {
-        fs.unlinkSync(empAvatarPath);
+      await prisma.employee.update({
+        where: { id: employee.id },
+        data: { avatar: null },
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Avatar berhasil dihapus",
+    });
+  } catch (err) {
+    console.error("DELETE AVATAR ERROR:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Gagal menghapus avatar" 
+    });
+  }
+};
       }
       await prisma.employee.update({
         where: { id: employee.id },

@@ -13,30 +13,22 @@ import {
 const router = express.Router();
 
 // ============================================
-// MULTER CONFIG untuk Avatar Upload
+// MULTER CONFIG untuk Avatar Upload - MEMORY STORAGE for Cloudinary
 // ============================================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/avatars");
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `avatar-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
-  },
-});
+const storage = multer.memoryStorage(); // Use memory storage for Cloudinary upload
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
+  const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error("Hanya file JPEG dan PNG yang diperbolehkan"), false);
+    cb(new Error("Hanya file JPEG, PNG, dan WebP yang diperbolehkan"), false);
   }
 };
 
 const upload = multer({
   storage,
-  limits: { fileSize: 1024 * 1024 }, // 1MB
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit for Cloudinary
   fileFilter,
 });
 
