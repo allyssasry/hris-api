@@ -1,7 +1,7 @@
 {
   "version": 2,
   "installCommand": "npm install",
-  "buildCommand": "npx prisma@6.17.1 generate && npx prisma@6.17.1 migrate deploy",
+  "buildCommand": "npx prisma@6.17.1 generate && npx prisma@6.17.1 db push --accept-data-loss",
   "outputDirectory": ".",
   "builds": [
     {
