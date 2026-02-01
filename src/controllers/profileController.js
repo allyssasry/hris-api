@@ -216,6 +216,9 @@ export const updateProfile = async (req, res) => {
  * Upload/update avatar user - NOW USES CLOUDINARY
  */
 export const updateAvatar = async (req, res) => {
+  console.log("🚀 CLOUDINARY AVATAR UPLOAD V2 - START");
+  console.log("📁 req.file:", req.file ? { size: req.file.size, mimetype: req.file.mimetype, hasBuffer: !!req.file.buffer } : "NO FILE");
+  
   try {
     const userId = req.user.id;
 
@@ -223,6 +226,14 @@ export const updateAvatar = async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         message: "File avatar tidak ditemukan" 
+      });
+    }
+    
+    if (!req.file.buffer) {
+      console.error("❌ NO BUFFER - Still using diskStorage!");
+      return res.status(500).json({ 
+        success: false, 
+        message: "Server error: file buffer not found. Please contact admin." 
       });
     }
 
