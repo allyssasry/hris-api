@@ -1,6 +1,7 @@
 // src/controllers/employeeController.js
 import { prisma } from "../utils/prisma.js";
 import { sendEmployeeCredentials } from "../services/emailService.js";
+import { uploadToCloudinary, deleteFromCloudinary, getPublicIdFromUrl } from "../utils/cloudinary.js";
 const NEW_EMPLOYEE_WINDOW_DAYS = 30; // New employee = 1 bulan sejak dibuat
 
 function isNewEmployee(createdAt) {
@@ -247,8 +248,20 @@ export async function createEmployee(req, res) {
     const bcrypt = await import("bcryptjs");
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ===================== AVATAR =====================
-    const avatarPath = req.file ? `/uploads/${req.file.filename}` : null;
+    // ===================== AVATAR - CLOUDINARY =====================
+    let avatarUrl = null;
+    if (req.file) {
+      try {
+        const uploadResult = await uploadToCloudinary(
+          req.file.buffer,
+          'hris/employees',
+          `employee-${employeeId}-${Date.now()}`
+        );
+        avatarUrl = uploadResult.url;
+      } catch (uploadErr) {
+        console.error("Cloudinary upload error:", uploadErr);
+      }
+    }
 
     // ===================== TRANSACTION (USER + EMPLOYEE) =====================
     const result = await prisma.$transaction(async (tx) => {
@@ -281,7 +294,7 @@ export async function createEmployee(req, res) {
           accountNumber: accountNumber || null,
           spType: spType || null,
           education: education || null,
-          avatar: avatarPath,
+          avatar: avatarUrl,
           userId: user.id,   // 🔗 RELASI
           companyId,
         },
@@ -350,14 +363,12 @@ export async function createEmployee(req, res) {
 
 /**
  * PUT /api/employees/:id
- * Tambahan: update avatar bila upload foto baru
+ * Tambahan: update avatar bila upload foto baru - NOW WITH CLOUDINARY
  */
 export async function updateEmployee(req, res) {
   try {
     const { id } = req.params;
     const body = req.body;
-
-    const newAvatar = req.file ? `/uploads/${req.file.filename}` : null;
 
     // ⭐ Ambil employee + userId + avatar lama
     const old = await prisma.employee.findUnique({
@@ -365,6 +376,7 @@ export async function updateEmployee(req, res) {
       select: {
         avatar: true,
         userId: true,
+        employeeId: true,
       },
     });
 
@@ -373,6 +385,29 @@ export async function updateEmployee(req, res) {
         success: false,
         message: "Employee not found",
       });
+    }
+
+    // ⭐ Upload new avatar to Cloudinary if provided
+    let newAvatar = null;
+    if (req.file) {
+      try {
+        // Delete old avatar from Cloudinary if exists
+        if (old.avatar && old.avatar.includes('cloudinary')) {
+          const oldPublicId = getPublicIdFromUrl(old.avatar);
+          if (oldPublicId) {
+            await deleteFromCloudinary(oldPublicId);
+          }
+        }
+        
+        const uploadResult = await uploadToCloudinary(
+          req.file.buffer,
+          'hris/employees',
+          `employee-${old.employeeId}-${Date.now()}`
+        );
+        newAvatar = uploadResult.url;
+      } catch (uploadErr) {
+        console.error("Cloudinary upload error:", uploadErr);
+      }
     }
 
     // ⭐ Update employee
@@ -516,11 +551,30 @@ export async function updateAvatar(req, res) {
       });
     }
 
-    const avatarPath = `/uploads/${req.file.filename}`;
+    // Get old employee data for avatar cleanup
+    const oldEmployee = await prisma.employee.findUnique({
+      where: { id: Number(id) },
+      select: { avatar: true, employeeId: true },
+    });
+
+    // Delete old avatar from Cloudinary if exists
+    if (oldEmployee?.avatar && oldEmployee.avatar.includes('cloudinary')) {
+      const oldPublicId = getPublicIdFromUrl(oldEmployee.avatar);
+      if (oldPublicId) {
+        await deleteFromCloudinary(oldPublicId);
+      }
+    }
+
+    // Upload to Cloudinary
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      'hris/employees',
+      `employee-${oldEmployee?.employeeId || id}-${Date.now()}`
+    );
 
     const updated = await prisma.employee.update({
       where: { id: Number(id) },
-      data: { avatar: avatarPath },
+      data: { avatar: uploadResult.url },
     });
 
     return res.json({
@@ -532,7 +586,7 @@ export async function updateAvatar(req, res) {
     console.error("Avatar upload error:", err);
     return res.status(500).json({
       success: false,
-      message: "Failed to upload avatar",
+      message: "Failed to upload avatar: " + err.message,
     });
   }
 }
