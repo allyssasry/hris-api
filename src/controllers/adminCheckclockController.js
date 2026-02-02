@@ -1,4 +1,5 @@
 import { prisma } from "../utils/prisma.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 
 const ALLOWED_TYPES = [
   "CLOCK_IN",
@@ -225,6 +226,19 @@ export async function createAdminCheckclock(req, res, next) {
 
     const now = new Date();
     const proofFile = req.file;
+    
+    // Upload proof to Cloudinary if exists
+    let proofUrl = null;
+    let proofName = null;
+    if (proofFile && proofFile.buffer) {
+      const uploadResult = await uploadToCloudinary(
+        proofFile.buffer,
+        'hris/checkclock-proofs',
+        `proof-${Date.now()}`
+      );
+      proofUrl = uploadResult.url;
+      proofName = proofFile.originalname;
+    }
 
     /* =====================================================
        🔥 CLOCK OUT (ADMIN) — UPDATE, BUKAN CREATE
@@ -251,11 +265,9 @@ export async function createAdminCheckclock(req, res, next) {
           clockOutTime: now,
           approvedBy: req.user.id,
           approvedAt: now,
-          // Save clock out proof
-          clockOutProofPath: proofFile
-            ? `/uploads/checkclock-proofs/${proofFile.filename}`
-            : null,
-          clockOutProofName: proofFile ? proofFile.originalname : null,
+          // Save clock out proof to Cloudinary
+          clockOutProofPath: proofUrl,
+          clockOutProofName: proofName,
         },
       });
 
@@ -306,12 +318,10 @@ endDate:
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
 
-        // 📝 NOTES & FILE
+        // 📝 NOTES & FILE - Now using Cloudinary URL
         notes: notes || null,
-        proofPath: proofFile
-          ? `/uploads/checkclock-proofs/${proofFile.filename}`
-          : null,
-        proofName: proofFile ? proofFile.originalname : null,
+        proofPath: proofUrl,
+        proofName: proofName,
 
         // 🧾 STATUS
         status,

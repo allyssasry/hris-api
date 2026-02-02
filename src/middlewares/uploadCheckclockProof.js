@@ -1,18 +1,18 @@
 // middlewares/uploadCheckclockProof.js
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 
-const dest = path.join(process.cwd(), "uploads", "checkclock-proofs");
-fs.mkdirSync(dest, { recursive: true });
+// Use memory storage for Cloudinary uploads
+const storage = multer.memoryStorage();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, dest),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname || "");
-    const name = path.basename(file.originalname || "proof", ext);
-    cb(null, `${name}-${Date.now()}${ext}`);
-  },
-});
-
-export const uploadCheckclockProof = multer({ storage }).single("proof");
+export const uploadCheckclockProof = multer({ 
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Hanya file gambar yang diperbolehkan"), false);
+    }
+  }
+}).single("proof");

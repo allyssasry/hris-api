@@ -1,4 +1,5 @@
 import { prisma } from "../utils/prisma.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 
 /* ===================== CONSTANT ===================== */
 const ALLOWED_TYPES = [
@@ -141,6 +142,19 @@ export async function createUserCheckclock(req, res, next) {
 
     const now = new Date();
     const proofFile = req.file;
+    
+    // Upload proof to Cloudinary if exists
+    let proofUrl = null;
+    let proofName = null;
+    if (proofFile && proofFile.buffer) {
+      const uploadResult = await uploadToCloudinary(
+        proofFile.buffer,
+        'hris/checkclock-proofs',
+        `proof-${employeeId}-${Date.now()}`
+      );
+      proofUrl = uploadResult.url;
+      proofName = proofFile.originalname;
+    }
 
     /* ================= CLOCK OUT ================= */
     if (normalizedType === "CLOCK_OUT") {
@@ -232,12 +246,10 @@ export async function createUserCheckclock(req, res, next) {
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
 
-        // 📝 bukti
+        // 📝 bukti - Now using Cloudinary URL
         notes: notes || null,
-        proofPath: proofFile
-          ? `/uploads/checkclock-proofs/${proofFile.filename}`
-          : null,
-        proofName: proofFile ? proofFile.originalname : null,
+        proofPath: proofUrl,
+        proofName: proofName,
 
         // 🧾 approval (USER → PENDING)
         status,

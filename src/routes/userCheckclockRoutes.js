@@ -12,15 +12,20 @@ import {
 
 const r = Router();
 
-/* ================= MULTER ================= */
-const storage = multer.diskStorage({
-  destination: "uploads/checkclock-proofs",
-  filename: (_, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+/* ================= MULTER - Memory Storage for Cloudinary ================= */
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Hanya file gambar yang diperbolehkan"), false);
+    }
+  }
 });
-
-const upload = multer({ storage });
 
 /* ============================================================
    ======================= ROUTES =============================
