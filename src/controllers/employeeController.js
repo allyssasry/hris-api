@@ -330,8 +330,8 @@ export async function createEmployee(req, res) {
         password, // plain password sebelum di-hash
         companyName,
         loginUrl: process.env.FRONTEND_URL 
-          ? `${process.env.FRONTEND_URL}/sign-in` 
-          : 'http://localhost:5173/sign-in'
+          ? `${process.env.FRONTEND_URL}/auth/sign-in` 
+          : 'http://localhost:5173/auth/sign-in'
       }).then(result => {
         if (result.success) {
           console.log(`✅ Email kredensial terkirim ke ${email}`);
