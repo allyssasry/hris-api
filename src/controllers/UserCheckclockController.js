@@ -10,6 +10,68 @@ const ALLOWED_TYPES = [
   "SICK_LEAVE",
 ];
 
+/* ===================== HELPER: Get Employee's Scheduled Clock In Time ===================== */
+async function getScheduledClockInTime(employeeId, date) {
+  // Get day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  const dayOfWeek = date.getDay();
+  
+  // Get employee's userId
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    select: { userId: true }
+  });
+  
+  if (!employee?.userId) return null;
+  
+  // Find active UserShift for this employee
+  const userShift = await prisma.userShift.findFirst({
+    where: {
+      userId: employee.userId,
+      effectiveFrom: { lte: date },
+      OR: [
+        { effectiveTo: null },
+        { effectiveTo: { gte: date } }
+      ]
+    },
+    include: {
+      setting: {
+        include: {
+          times: {
+            where: { day: dayOfWeek }
+          }
+        }
+      }
+    },
+    orderBy: { effectiveFrom: 'desc' }
+  });
+  
+  if (!userShift?.setting?.times?.[0]?.clockInMinutes) {
+    return null; // No schedule found, will use default
+  }
+  
+  const clockInMinutes = userShift.setting.times[0].clockInMinutes;
+  return clockInMinutes; // Returns minutes from midnight (e.g., 480 for 08:00, 960 for 16:00)
+}
+
+/* ===================== HELPER: Determine LATE/ON_TIME Status ===================== */
+async function determineClockInStatus(employeeId, clockInTime) {
+  const scheduledMinutes = await getScheduledClockInTime(employeeId, clockInTime);
+  
+  // Convert current time to minutes from midnight
+  const currentHour = clockInTime.getHours();
+  const currentMinute = clockInTime.getMinutes();
+  const currentTotalMinutes = currentHour * 60 + currentMinute;
+  
+  if (scheduledMinutes !== null) {
+    // Use scheduled time from Work Schedule
+    return currentTotalMinutes > scheduledMinutes ? "LATE" : "ON_TIME";
+  } else {
+    // Default: 08:00 (480 minutes)
+    const defaultClockIn = 8 * 60; // 08:00
+    return currentTotalMinutes > defaultClockIn ? "LATE" : "ON_TIME";
+  }
+}
+
 
 /* ===================== HELPER ===================== */
 function calcWorkHours(start, end) {
@@ -203,10 +265,8 @@ export async function createUserCheckclock(req, res, next) {
     /* ================= STATUS CLOCK IN ================= */
     let status = null;
     if (normalizedType === "CLOCK_IN") {
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      status =
-        hour > 8 || (hour === 8 && minute > 0) ? "LATE" : "ON_TIME";
+      // Use scheduled time from Work Schedule, fallback to default 08:00
+      status = await determineClockInStatus(employeeId, now);
     }
 
     /* ================= DATE RANGE (AMAN) ================= */
