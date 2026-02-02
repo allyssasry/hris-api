@@ -344,25 +344,6 @@ export const deleteAvatar = async (req, res) => {
     });
   }
 };
-      }
-      await prisma.employee.update({
-        where: { id: employee.id },
-        data: { avatar: null },
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Avatar berhasil dihapus",
-    });
-  } catch (err) {
-    console.error("DELETE AVATAR ERROR:", err);
-    res.status(500).json({ 
-      success: false, 
-      message: "Gagal menghapus avatar" 
-    });
-  }
-};
 
 /**
  * PUT /api/profile/change-password
