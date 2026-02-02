@@ -184,7 +184,7 @@ export async function getAdminDashboardStats(req, res) {
           no: index + 1,
           name: `${record.employee?.firstName || ""} ${record.employee?.lastName || ""}`.trim() || "Unknown",
           status: record.status || "ON_TIME",
-          checkIn: record.time ? new Date(record.time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"
+          checkIn: record.time ? new Date(record.time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }) : "-"
         })),
         period: {
           startDate: startDate.toISOString(),

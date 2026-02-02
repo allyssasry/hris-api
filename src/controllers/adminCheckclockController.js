@@ -173,11 +173,13 @@ export async function listAdminCheckclocks(req, res, next) {
   const e = c.employee || {};
   const isLeave = ["ABSENT", "ANNUAL_LEAVE", "SICK_LEAVE"].includes(c.type);
 
+  // 🔥 FIX: Use Asia/Jakarta timezone to format time correctly (WIB)
   const formatTime = (t) =>
     t
       ? new Date(t).toLocaleTimeString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",
+          timeZone: "Asia/Jakarta", // ✅ Force WIB timezone
         })
       : "-";
 
@@ -682,6 +684,7 @@ export async function getAttendanceTable(req, res) {
           ? new Date(r.time).toLocaleTimeString("id-ID", {
               hour: "2-digit",
               minute: "2-digit",
+              timeZone: "Asia/Jakarta", // ✅ Force WIB timezone
             })
           : "-",
     }));
