@@ -115,7 +115,11 @@ export async function getAllSchedules(req, res) {
         branch: emp.branch || '-',
         shiftType: setting?.name || 'Regular',
         avatar: emp.avatar || null,
-        schedules: schedulesByDay
+        schedules: schedulesByDay,
+        // 🔑 ADD TERMINATION INFO FOR FRONTEND STYLING
+        isActive: emp.isActive,
+        terminationType: emp.terminationType || null,
+        terminatedAt: emp.terminatedAt || null,
       };
     });
 

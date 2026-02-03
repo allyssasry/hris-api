@@ -52,10 +52,7 @@ export const signIn = async (req, res) => {
   const ok = await bcrypt.compare(password, user.password);
   if (!ok) return res.status(401).json({ message: "kredensial salah" });
 
-  const token = issueJWT(user);
-
-  // Cek jika user punya employee record (untuk dapat avatar dan position)
-  // Query untuk SEMUA user, karena admin juga bisa punya employee record
+  // 🔒 CHECK IF USER IS EMPLOYEE AND IF THEY'RE RESIGNED/TERMINATED
   const employeeData = await prisma.employee.findFirst({
     where: { userId: user.id },
     select: {
@@ -63,8 +60,17 @@ export const signIn = async (req, res) => {
       jobdesk: true,
       firstName: true,
       lastName: true,
+      terminationType: true,
+      isActive: true,
     }
   });
+
+  // If user is an employee and resigned/terminated, deny login
+  if (employeeData && (employeeData.terminationType || !employeeData.isActive)) {
+    return res.status(403).json({ message: "Akun karyawan ini sudah tidak aktif" });
+  }
+
+  const token = issueJWT(user);
 
   // Avatar URL - convert path ke full URL
   const rawAvatar = employeeData?.avatar || user.avatar;
@@ -256,6 +262,14 @@ export async function employeeSignIn(req, res) {
       return res.status(404).json({
         success: false,
         message: "Employee ID tidak ditemukan",
+      });
+    }
+
+    // 🔒 CHECK IF EMPLOYEE IS RESIGNED OR TERMINATED
+    if (employee.terminationType || !employee.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Akun karyawan ini sudah tidak aktif. Silakan hubungi admin.",
       });
     }
 
