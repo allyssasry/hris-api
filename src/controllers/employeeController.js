@@ -607,7 +607,7 @@ export async function getEmployeeStats(req, res) {
     }
 
     // Use Prisma count for accurate stats (same as dashboard)
-    const [total, active, past, newCount] = await Promise.all([
+    const [total, active, past, newCount, fullTime] = await Promise.all([
       // Total employees
       prisma.employee.count({
         where: { companyId }
@@ -638,6 +638,15 @@ export async function getEmployeeStats(req, res) {
             gte: new Date(Date.now() - NEW_EMPLOYEE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
           }
         }
+      }),
+      // Full Time employees (contractType = 'permanent')
+      prisma.employee.count({
+        where: {
+          companyId,
+          contractType: "permanent",
+          isActive: true,
+          terminationType: null
+        }
       })
     ]);
 
@@ -658,7 +667,8 @@ export async function getEmployeeStats(req, res) {
       total,
       new: newCount,
       active,
-      past
+      past,
+      fullTime, // Full Time Employee count
     };
 
     const statusDistribution = {
