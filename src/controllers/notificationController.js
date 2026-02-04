@@ -145,6 +145,7 @@ export async function getUnreadCount(req, res, next) {
 export async function createNotification({
   userId,
   fromUserId,
+  companyId = null,
   type,
   title,
   message,
@@ -155,6 +156,7 @@ export async function createNotification({
       data: {
         userId,
         fromUserId,
+        companyId,
         type,
         title,
         message,

@@ -141,6 +141,9 @@ model Company {
   // ===== LOKASI KANTOR =====
   locations CompanyLocation[]
 
+  // ===== NOTIFICATIONS =====
+  notifications Notification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -448,6 +451,7 @@ model Notification {
   id          Int       @id @default(autoincrement())
   userId      Int       // Recipient user ID
   fromUserId  Int?      // Sender user ID (null for system notifications)
+  companyId   Int?      // Company ID for multi-tenancy filtering
   type        String    // CHECKCLOCK_APPROVED, CHECKCLOCK_REJECTED, CHECKCLOCK_SUBMITTED, etc.
   title       String
   message     String    @db.Text
@@ -456,9 +460,11 @@ model Notification {
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 
-  user     User  @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
-  fromUser User? @relation("NotificationSender", fields: [fromUserId], references: [id], onDelete: SetNull)
+  user     User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  fromUser User?    @relation("NotificationSender", fields: [fromUserId], references: [id], onDelete: SetNull)
+  company  Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
+  @@index([companyId])
 }
